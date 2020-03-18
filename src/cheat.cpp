@@ -77,6 +77,7 @@ static CHEAT_ENTRY cheatCodes[] =
 	{"work harder", kf_FinishResearch},
 	{"tileinfo", kf_TileInfo}, // output debug info about a tile
 	{"showfps", kf_ToggleFPS},	//displays your average FPS
+	{"showkills", kf_ToggleKillCount},	//displays your kills
 	{"showsamples", kf_ToggleSamples}, //displays the # of Sound samples in Queue & List
 	{"showorders", kf_ToggleOrders}, //displays unit order/action state.
 	{"pause", kf_TogglePauseMode}, // Pause the game.
@@ -98,6 +99,11 @@ bool attemptCheatCode(const char *cheat_name)
 	if (!strcasecmp("showfps", cheat_name))
 	{
 		kf_ToggleFPS();
+		return true;
+	}
+	if (!strcasecmp("showkills", cheat_name))
+	{
+		kf_ToggleKillCount();
 		return true;
 	}
 

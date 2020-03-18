@@ -579,7 +579,6 @@ void researchResult(UDWORD researchIndex, UBYTE player, bool bDisplay, STRUCTURE
 	{
 		audio_QueueTrack(ID_SOUND_RESEARCH_COMPLETED);
 	}
-
 	if (player == selectedPlayer && bDisplay)
 	{
 		//add console text message

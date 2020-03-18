@@ -402,7 +402,7 @@ void selNextSpecifiedBuilding(STRUCTURE_TYPE structType)
 		{
 			camToggleStatus();
 		}
-		setViewPos(map_coord(psResult->pos.x), map_coord(psResult->pos.y), false);
+		//setViewPos(map_coord(psResult->pos.x), map_coord(psResult->pos.y), false);
 		if (psOldStruct)
 		{
 			psOldStruct->selected = false;

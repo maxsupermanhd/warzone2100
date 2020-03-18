@@ -412,4 +412,5 @@ bool isSecondaryWindowUp();
 
 void intOpenDebugMenu(OBJECT_TYPE id);
 
+
 #endif // __INCLUDED_SRC_HCI_H__

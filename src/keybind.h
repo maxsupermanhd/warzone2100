@@ -36,6 +36,7 @@ void kf_HalveHeights();
 void kf_DebugDroidInfo();
 void kf_BuildInfo();
 void kf_ToggleFPS();			//FPS counter NOT same as kf_Framerate! -Q
+void kf_ToggleKillCount();
 void kf_ToggleSamples();		// Displays # of sound samples in Queue/list.
 void kf_ToggleOrders();		//displays unit's Order/action state.
 void kf_FrameRate();

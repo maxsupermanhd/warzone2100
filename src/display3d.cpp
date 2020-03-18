@@ -79,6 +79,7 @@
 #include "order.h"
 #include "scores.h"
 #include "multiplay.h"
+#include "multistat.h"
 #include "advvis.h"
 #include "cmddroid.h"
 #include "terrain.h"
@@ -128,6 +129,7 @@ static WzText txtLevelName;
 static WzText txtDebugStatus;
 static WzText txtCurrentTime;
 static WzText txtShowFPS;
+static WzText txtKills;
 // show Samples text
 static WzText txtShowSamples_Que;
 static WzText txtShowSamples_Lst;
@@ -227,6 +229,10 @@ static unsigned int rubbleTile = BLOCKING_RUBBLE_TILE;
 bool showFPS = false;       //
 /** Show how many samples we are rendering per second
  * default OFF, turn ON via console command 'showsamples'
+ */
+bool showKILLCOUNT = false;
+/** Show how many kills/deaths (produced units) made
+ * default OFF, turn ON via console command 'showkills'
  */
 bool showSAMPLES = false;
 /**  Show the current selected units order / action
@@ -820,6 +826,17 @@ void draw3DScene()
 		const unsigned width = txtShowFPS.width() + 10;
 		const unsigned height = txtShowFPS.height();
 		txtShowFPS.render(pie_GetVideoBufferWidth() - width, pie_GetVideoBufferHeight() - height, WZCOL_TEXT_BRIGHT);
+	}
+	if (showKILLCOUNT)
+	{
+		char *killdiff;
+		unsigned int UnitsLost = missionData.unitsLost;
+		unsigned int UnitsKilled = bMultiPlayer ? getMultiStats(selectedPlayer).recentKills : missionData.unitsKilled;
+		unsigned int UnitsBuilt = missionData.unitsBuilt;
+		double KDRaito = (double)UnitsKilled / (double)UnitsLost;
+		sasprintf(&killdiff, "Kills: %d/%d %f (%d)", UnitsKilled, UnitsLost, KDRaito, UnitsBuilt);
+		txtKills.setText(killdiff, font_regular);
+		txtKills.render(pie_GetVideoBufferWidth() - txtKills.width() + 10 - 100, pie_GetVideoBufferHeight() - txtKills.height(), WZCOL_TEXT_BRIGHT);
 	}
 	if (showORDERS)
 	{
