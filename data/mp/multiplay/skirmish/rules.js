@@ -10,6 +10,7 @@ receiveAllEvents(true);  // If doing this in eventGameInit, it seems to be too l
 
 include("multiplay/script/camTechEnabler.js");
 include("multiplay/script/weather.js");
+include("multiplay/script/condition.js");
 
 var lastHitTime = 0;
 var cheatmode = false;
@@ -264,6 +265,17 @@ function eventGameInit()
 	setupGame();
 	printGameSettings();
 
+	//we consider observers to players who cannot play from the beginning of the game
+	for (var playnum = 0; playnum < maxPlayers; playnum++)
+	{
+		if (!canPlay(playnum))
+		{
+			playerData[playnum].condition = "spectator";
+		}
+		else {playerData[playnum].condition = "play";}
+	}
+
+
 	// always at least one oil drum, and one more for every 64x64 tiles of map area
 	oilDrumData.maxOilDrums = (mapWidth * mapHeight) >> 12; // replace float division with shift for sync-safety
 	for (var i = 0; i < oilDrumData.maxOilDrums; ++i)
@@ -328,13 +340,19 @@ function eventGameInit()
 	applyLimitSet();	// set limit options
 
 	const cleanTech = 1;
-	const timeBaseTech = 4.5*60;	
+	const timeBaseTech = 4.5*60;
 	const timeAdvancedBaseTech = 7.9*60;
 	const timeT2= 17*60;
 	const timeT3= 25*60;
 
 	for (var playnum = 0; playnum < maxPlayers; playnum++)
 	{
+		if(playerData[playnum].condition == "spectator")
+		{
+			toSpectator(playnum, true);
+			continue;
+		}
+
 		enableResearch("R-Sys-Sensor-Turret01", playnum);
 		enableResearch("R-Wpn-MG1Mk1", playnum);
 		enableResearch("R-Sys-Engineering01", playnum);
@@ -402,12 +420,12 @@ function eventGameInit()
 		}
 	}
 
+	setTimer("checkEndConditions", 3000);
 	hackNetOn();
-
+	setTimer("gameCompletion", 3000);
 	//Structures might have been removed so we need to update the reticule button states again
 	setMainReticule();
 
-	setTimer("checkEndConditions", 3000);
 	if (tilesetType === "URBAN" || tilesetType === "ROCKIES")
 	{
 		setTimer("weatherCycle", 45000);
@@ -419,62 +437,68 @@ function eventGameInit()
 // END CONDITIONS
 function checkEndConditions()
 {
-	var factories = countStruct("A0LightFactory") + countStruct("A0CyborgFactory");
-	var droids = countDroid(DROID_ANY);
-
-	// Losing Conditions
-	if (droids == 0 && factories == 0)
-	{
-		var gameLost = true;
-
-		/* If teams enabled check if all team members have lost  */
-		if (alliancesType == ALLIANCES_TEAMS || alliancesType == ALLIANCES_UNSHARED)
-		{
-			for (var playnum = 0; playnum < maxPlayers; playnum++)
-			{
-				if (playnum != selectedPlayer && allianceExistsBetween(selectedPlayer, playnum))
-				{
-					factories = countStruct("A0LightFactory", playnum) + countStruct("A0CyborgFactory", playnum);
-					droids = countDroid(DROID_ANY, playnum);
-					if (droids > 0 || factories > 0)
-					{
-						gameLost = false;	// someone from our team still alive
-						break;
-					}
-				}
-			}
-		}
-
-		if (gameLost)
-		{
-			gameOverMessage(false);
-			removeTimer("checkEndConditions");
-			return;
-		}
-	}
-
-	// Winning Conditions
-	var gamewon = true;
-
-	// check if all enemies defeated
 	for (var playnum = 0; playnum < maxPlayers; playnum++)
 	{
-		if (playnum != selectedPlayer && !allianceExistsBetween(selectedPlayer, playnum))	// checking enemy player
+		//we mark the retired players as lost and give them visibility. we save buildings
+		if (!canPlay(playnum) &&  (playerData[playnum].condition != "spectator"))
 		{
-			factories = countStruct("A0LightFactory", playnum) + countStruct("A0CyborgFactory", playnum); // nope
-			droids = countDroid(DROID_ANY, playnum);
-			if (droids > 0 || factories > 0)
+			playerData[playnum].condition = "lost";
+			toSpectator(playnum, false);
+
+		}
+		// Winning Conditions
+		// all participants except teammates (this is not the same as the allies) cannot continue the game
+		var win = true;
+		for (var splaynum = 0; splaynum < maxPlayers; splaynum++)
+		{
+			if (allianceExistsBetween(playnum, splaynum))
 			{
-				gamewon = false;	//one of the enemies still alive
-				break;
+				continue;
+			}
+			if (playerData[splaynum].condition == "play")
+			{
+				win = false;
 			}
 		}
+		if (win)
+		{
+			playerData[playnum].condition = "win";
+		}
 	}
+}
 
-	if (gamewon)
+function gameCompletion()
+{
+	if (playerData[selectedPlayer].condition == "lost")
+	{
+		gameOverMessage(false);
+		removeTimer("gameCompletion");
+		return;
+	}
+	if (playerData[selectedPlayer].condition == "win")
 	{
 		gameOverMessage(true);
-		removeTimer("checkEndConditions");
+		removeTimer("gameCompletion");
+		return;
+	}
+
+	if (playerData[selectedPlayer].condition == "spectator")
+	{
+		var gameEnd = false;
+		for (var playnum = 0; playnum < maxPlayers; playnum++)
+		{
+			if (playerData[playnum].condition == "win")
+			{
+				gameEnd = true;
+			}
+		}
+
+		if (gameEnd)
+		{
+			gameOverMessage(true);
+			removeTimer("gameCompletion");
+			return;
+		}
 	}
 }
 
