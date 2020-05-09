@@ -1,8 +1,19 @@
+const USERTYPE = {
+	spectator: "spectator",
+	player: {
+		fighter: "fighter",
+		winner: "winner",
+		loser: "loser",
+	},
+};
+
 function inOneTeam(playnum, splaynum)
 {
 //	FIXME allianceExistsBetween dont correct if leave player in ALLIANCES_UNSHARED, ALLIANCES_TEAMS mode
 //	and  team is garbage in NO_ALLIANCES, ALLIANCES mode
-	if ((alliancesType == ALLIANCES_UNSHARED || alliancesType == ALLIANCES_TEAMS) && (playerData[playnum].team != playerData[splaynum].team))
+	if ((alliancesType == ALLIANCES_UNSHARED ||
+		alliancesType == ALLIANCES_TEAMS) &&
+		(playerData[playnum].team != playerData[splaynum].team))
 	{
 		return false;
 	}
@@ -14,116 +25,166 @@ function inOneTeam(playnum, splaynum)
 	{
 		return false;
 	}
-	else
-	{
-		return true;
-	}
+
+	return true;
 }
 
-function canPlay(playnum)
+function hasFactory(playnum)
 {
-	var feature = {};
 	var structs = [FACTORY, CYBORG_FACTORY, VTOL_FACTORY];
 
-	feature.factory = false;
 	for (var splaynum = 0; splaynum < maxPlayers; splaynum++)
 	{
 		if (!inOneTeam(playnum, splaynum))
 		{
 			continue;
 		}
+
 		for (var i = 0; i < structs.length; ++i)
 		{
 			var onMapStructss = enumStruct(splaynum, structs[i]);
+
 			for (var j = 0; j < onMapStructss.length; ++j)
 			{
 				if (onMapStructss[j].status === BUILT)
 				{
-					feature.factory = true;
-					break;
+					return true;
 				}
 			}
 		}
 	}
 
-	feature.droid = false;
+	return false;
+}
+
+function hasDroid(playnum)
+{
 	for (var splaynum = 0; splaynum < maxPlayers; splaynum++)
 	{
 		if (inOneTeam(playnum, splaynum) && countDroid(DROID_ANY, splaynum) > 0)	// checking enemy player
 		{
-			feature.droid = true;
+			return true;
 		}
 	}
 
-	feature.onlyConstruct = false;
+	return false;
+}
+
+function hasOnlyConstructor(playnum)
+{
+	var count = 0;
 	for (var splaynum = 0; splaynum < maxPlayers; splaynum++)
 	{
-		if (inOneTeam(playnum, splaynum) && countDroid(DROID_ANY, splaynum) === countDroid(DROID_CONSTRUCT, playnum))
+		if (inOneTeam(playnum, splaynum))
 		{
-			feature.onlyConstruct = true;
+			count += countDroid(DROID_ANY, splaynum) - countDroid(DROID_CONSTRUCT, splaynum);
 		}
 	}
+	if (count === 0) {return true;}
+	else {return false;}
+}
 
-	feature.oilReach=false;
-	var oils = enumFeature(ALL_PLAYERS).filter(function(e){if (e.stattype === OIL_RESOURCE) return true; return false;});
+function canReachOil(playnum)
+{
+	var oils = enumFeature(ALL_PLAYERS).filter(function(e) {
+		return e.stattype === OIL_RESOURCE;
+	});
+
 	for (var tplaynum = 0; tplaynum < maxPlayers; tplaynum++)
 	{
 		oils = oils.concat(enumStruct(tplaynum, "A0ResourceExtractor"));
 	}
+
 	for (var splaynum = 0; splaynum < maxPlayers; splaynum++)
 	{
 		if (!inOneTeam(playnum, splaynum))
 		{
 			continue;
 		}
+
 		if (enumStruct(splaynum, RESOURCE_EXTRACTOR).length != 0)
 		{
-			feature.oilReach = true;
-			break;
+			return true;
 		}
 		else
 		{
 			var trucks = enumDroid(splaynum, DROID_CONSTRUCT);
-			trucks.forEach(function(truck)
+
+			for (var i = 0, len = trucks.length; i < len; ++i)
 			{
-				oils.forEach(function (oil)
+				var truck = trucks[i];
+
+				for (var j = 0, len2 = oils.length; j < len2; ++j)
 				{
+					var oil = oils[j];
+
 					if (droidCanReach(truck, oil.x, oil.y))
 					{
-						feature.oilReach = true;
+						return true;
 					}
-				});
-			});
+				}
+			}
 		}
 	}
 
+	return false;
+}
+
+function canPlay(playnum)
+{
+
+//	var feature = {
+//		factory: hasFactory(playnum),
+//		droid: hasDroid(playnum),
+//		onlyConstruct: hasOnlyConstructor(playnum),
+//		oilReach: canReachOil(playnum)
+//	};
 //	debug(playerData[playnum].name + JSON.stringify(feature));
-	if (!feature.factory && !feature.droid)
+
+	if (!hasFactory(playnum) && !hasDroid(playnum))
 	{
 		return false;
 	}
-	else if (!feature.factory && !feature.oilReach && feature.onlyConstruct)
+	else if (!hasFactory(playnum) && hasOnlyConstructor(playnum) && !canReachOil(playnum) )
 	{
 		return false;
 	}
+
 	return true;
 }
 
 function toSpectator(playnum, remove)
 {
 	setPower(0, playnum);
-	addSpotter(1, 1, playnum, 32640, 0, 0);
+	var spotter = {
+		X: mapWidth/2,
+		Y: mapHeight/2,
+		radius: Math.sqrt(mapWidth*mapWidth+mapHeight*mapHeight)/2*128
+	};
+	addSpotter(spotter.X, spotter.Y, playnum, spotter.radius, 0, 0);
+
 	var HQstructs = enumStruct(playnum, HQ);
-	HQstructs.forEach(function(e){removeObject(e);});
+	HQstructs.forEach(function(e) {
+		removeObject(e);
+	});
+
 	if (remove === true)
 	{
 		var droids = enumDroid(playnum, DROID_ANY);
-		droids.forEach(function(e){removeObject(e);});
+		droids.forEach(function(e) {
+			removeObject(e);
+		});
+
 		var structs = enumStruct(playnum);
-		structs.forEach(function(e){removeObject(e);});
+		structs.forEach(function(e) {
+			removeObject(e);
+		});
 	}
+
 	if (selectedPlayer === playnum)
-	{queue ("hud")}
+	{
+		queue("hud", 100);
+	}
 }
 
 function hud()

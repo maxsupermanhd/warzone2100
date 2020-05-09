@@ -175,6 +175,10 @@ function reticuleCommandCheck()
 
 function setMainReticule()
 {
+	if (playerData[selectedPlayer].usertype != USERTYPE.player.fighter)
+	{
+		return;
+	}
 	setReticuleButton(0, _("Close"), "image_cancel_up.png", "image_cancel_down.png");
 	reticuleManufactureCheck();
 	reticuleResearchCheck();
@@ -265,17 +269,6 @@ function eventGameInit()
 	setupGame();
 	printGameSettings();
 
-	//we consider observers to players who cannot play from the beginning of the game
-	for (var playnum = 0; playnum < maxPlayers; playnum++)
-	{
-		if (!canPlay(playnum))
-		{
-			playerData[playnum].condition = "spectator";
-		}
-		else {playerData[playnum].condition = "play";}
-	}
-
-
 	// always at least one oil drum, and one more for every 64x64 tiles of map area
 	oilDrumData.maxOilDrums = (mapWidth * mapHeight) >> 12; // replace float division with shift for sync-safety
 	for (var i = 0; i < oilDrumData.maxOilDrums; ++i)
@@ -347,10 +340,16 @@ function eventGameInit()
 
 	for (var playnum = 0; playnum < maxPlayers; playnum++)
 	{
-		if(playerData[playnum].condition == "spectator")
+		//we consider observers to players who cannot play from the beginning of the game
+		if (!canPlay(playnum))
 		{
+			playerData[playnum].usertype = USERTYPE.spectator;
 			toSpectator(playnum, true);
 			continue;
+		}
+		else
+		{
+			playerData[playnum].usertype = USERTYPE.player.fighter;
 		}
 
 		enableResearch("R-Sys-Sensor-Turret01", playnum);
@@ -420,14 +419,15 @@ function eventGameInit()
 		}
 	}
 
-	setTimer("checkEndConditions", 3000);
+	setTimer("checkPlayerVictoryStatus", 3000);
 	hackNetOn();
-	setTimer("gameCompletion", 3000);
+
 	//Structures might have been removed so we need to update the reticule button states again
 	setMainReticule();
 
 	if (tilesetType === "URBAN" || tilesetType === "ROCKIES")
 	{
+		weatherCycle(); // So there is a chance for rain/snow at the beginning of games
 		setTimer("weatherCycle", 45000);
 	}
 	setTimer("autoSave", 10*60*1000);
@@ -435,72 +435,93 @@ function eventGameInit()
 
 // /////////////////////////////////////////////////////////////////
 // END CONDITIONS
-function checkEndConditions()
-{
+
+function checkPlayerVictoryStatus()
+{	
+	for (var playnum = 0; playnum < maxPlayers; playnum++)
+	{	
+		if (playerData[playnum].usertype === USERTYPE.player.winner)
+		{
+			return; // When the winner is determined, nothing needs to be done.
+		}
+	}
+
 	for (var playnum = 0; playnum < maxPlayers; playnum++)
 	{
-		//we mark the retired players as lost and give them visibility. we save buildings
-		if (!canPlay(playnum) &&  (playerData[playnum].condition != "spectator"))
+		if (playerData[playnum].usertype === USERTYPE.player.loser)
 		{
-			playerData[playnum].condition = "lost";
-			toSpectator(playnum, false);
-
+			continue;
 		}
+		//we mark the retired players as lost and give them visibility. we save buildings
+		else if (!canPlay(playnum) && (playerData[playnum].usertype != USERTYPE.spectator))
+		{
+			//See loss check in function canPlay()
+			playerData[playnum].usertype = USERTYPE.player.loser;
+			toSpectator(playnum, false);
+			if  (selectedPlayer == playnum)
+			{
+				gameOverMessage(false);
+			}
+		}
+
 		// Winning Conditions
 		// all participants except teammates (this is not the same as the allies) cannot continue the game
-		var win = true;
+	}
+
+	var endGame = true;
+	for (var playnum = 0; playnum < maxPlayers; playnum++)
+	{	
+		if (playerData[playnum].usertype != USERTYPE.player.fighter)
+		{
+			continue;
+		}
+
 		for (var splaynum = 0; splaynum < maxPlayers; splaynum++)
 		{
-			if (allianceExistsBetween(playnum, splaynum))
+			if (inOneTeam(playnum, splaynum))
 			{
 				continue;
 			}
-			if (playerData[splaynum].condition == "play")
+			else if (playerData[splaynum].usertype === USERTYPE.player.fighter)
 			{
-				win = false;
+				endGame = false;
 			}
 		}
-		if (win)
-		{
-			playerData[playnum].condition = "win";
-		}
-	}
-}
-
-function gameCompletion()
-{
-	if (playerData[selectedPlayer].condition == "lost")
-	{
-		gameOverMessage(false);
-		removeTimer("gameCompletion");
-		return;
-	}
-	if (playerData[selectedPlayer].condition == "win")
-	{
-		gameOverMessage(true);
-		removeTimer("gameCompletion");
-		return;
 	}
 
-	if (playerData[selectedPlayer].condition == "spectator")
-	{
-		var gameEnd = false;
+	if (endGame == true)
+	{	
 		for (var playnum = 0; playnum < maxPlayers; playnum++)
-		{
-			if (playerData[playnum].condition == "win")
+		{	
+			if (playerData[playnum].usertype === USERTYPE.player.fighter)
 			{
-				gameEnd = true;
+				playerData[playnum].usertype = USERTYPE.player.winner;
 			}
+			console([
+				playerData[playnum].usertype,
+				playerData[playnum].colour, // fixme
+				playerData[playnum].name,
+				_("Team"),
+				playerData[playnum].team, // fixme
+				_("Position"),
+				playerData[playnum].position
+			].join(" "));
+			debug(JSON.stringify(playerData[playnum]));
 		}
-
-		if (gameEnd)
+		
+		if (playerData[selectedPlayer].usertype ===  USERTYPE.player.winner)
 		{
 			gameOverMessage(true);
-			removeTimer("gameCompletion");
-			return;
+		}
+		if (playerData[selectedPlayer].usertype == USERTYPE.spectator)
+		{
+			gameOverMessage(true);
+			console(_("the battle is over, you can leave the room"));
+			debug("the battle is over, you can leave the room");
 		}
 	}
 }
+
 
 // /////////////////////////////////////////////////////////////////
 // WARNING MESSAGES
