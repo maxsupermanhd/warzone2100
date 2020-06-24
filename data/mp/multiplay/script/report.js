@@ -1,5 +1,33 @@
+var colors =  [_("Green"),_("Orange"),_("Grey"),_("Black"),_("Red"),_("Blue"),_("Pink"),_("Cyan"),_("Yellow"),_("Purple"),_("White"),_("Bright blue"),_("Neon green"),_("Infrared"),_("Ultraviolet"),_("Brown")];
+var teams = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J"];
+function printReportBattle()
+{
+	for (var playnum = 0; playnum < maxPlayers; playnum++)
+		{
+			console([
+				playerData[playnum].usertype,
+				colors[playerData[playnum].colour],
+				playerData[playnum].name,
+				_("Team"),
+				teams[playerData[playnum].team],
+				_("Position"),
+				playerData[playnum].position
+			].join(" "));
+			debug([
+				"USERJSDUMP",
+				playerData[playnum].position,
+				playerData[playnum].usertype
+				].join(" "));}
+		if (playerData[selectedPlayer].usertype == USERTYPE.spectator)
+		{
+			console(_("the battle is over, you can leave the room"));
+			debug("the battle is over, you can leave the room");
+		}
+
+}
+
 namespace("rp_");
-function printGameSettings()
+function printStartGameSettings()
 {
 //add human readable method
 var human = {
@@ -40,7 +68,7 @@ var human = {
 var attacker = [];
 function rp_eventGameInit()
 {
-	printGameSettings();
+	printStartGameSettings();
 	for (var playnum = 0; playnum < maxPlayers; playnum++){
 		playerData[playnum].droidLost=0;
 		playerData[playnum].structureLost=0;
@@ -50,9 +78,10 @@ function rp_eventGameInit()
 	}
 }
 
-function rp_eventDestroyed(victim){
+function rp_eventDestroyed(victim)
+{
 //	console("dest:"+victim.player);
-	if(victim.type == DROID && supportPlayerData[victim.player].droid[victim.id]){
+	if(victim.type == DROID && attacker[victim.player].droid[victim.id]){
 		playerData[victim.player].droidLost++;
 		playerData[attacker[victim.player].droid[victim.id]].kills++;
 	}
@@ -61,7 +90,8 @@ function rp_eventDestroyed(victim){
 	}
 }
 
-function rp_eventAttacked(victimObj, attackerObj){
+function rp_eventAttacked(victimObj, attackerObj)
+{
 //	console("attack:"+attackerObj.player+"->"+victimObj.player);
 	if(victimObj.type == DROID){
 		{
