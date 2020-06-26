@@ -1,7 +1,7 @@
-var colors =  [_("Green"),_("Orange"),_("Grey"),_("Black"),_("Red"),_("Blue"),_("Pink"),_("Cyan"),_("Yellow"),_("Purple"),_("White"),_("Bright blue"),_("Neon green"),_("Infrared"),_("Ultraviolet"),_("Brown")];
-var teams = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J"];
 function printReportBattle()
 {
+	var colors =  [_("Green"),_("Orange"),_("Grey"),_("Black"),_("Red"),_("Blue"),_("Pink"),_("Cyan"),_("Yellow"),_("Purple"),_("White"),_("Bright blue"),_("Neon green"),_("Infrared"),_("Ultraviolet"),_("Brown")];
+	var teams = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J"];
 	for (var playnum = 0; playnum < maxPlayers; playnum++)
 		{
 			console([
@@ -16,7 +16,10 @@ function printReportBattle()
 			debug([
 				"USERJSDUMP",
 				playerData[playnum].position,
-				playerData[playnum].usertype
+				playerData[playnum].usertype,
+				playerData[playnum].droidLost,
+				playerData[playnum].structureLost,
+				playerData[playnum].kills
 				].join(" "));}
 		if (playerData[selectedPlayer].usertype == USERTYPE.spectator)
 		{
