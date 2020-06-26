@@ -153,6 +153,30 @@ function canPlay(playnum)
 	return true;
 }
 
+function roomPlayability()
+{
+	var unPlayability = true;
+	for (var playnum = 0; playnum < maxPlayers; playnum++)
+	{
+		for (var splaynum = 0; splaynum < maxPlayers; splaynum++)
+		{
+			if (playnum != splaynum && 
+			playerData[playnum].usertype == USERTYPE.player.fighter &&
+			playerData[splaynum].usertype == USERTYPE.player.fighter &&
+			!inOneTeam (playnum, splaynum))
+			{
+				unPlayability = false;
+			}
+		}
+	}
+	if (unPlayability) 
+	{
+//		debug(_("There are no opponents in the game."));
+		console(_("There are no opponents in the game"));
+//		gameOverMessage(false);
+	}
+}
+
 function toSpectator(playnum, remove)
 {
 	setPower(0, playnum);
