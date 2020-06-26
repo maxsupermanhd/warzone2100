@@ -180,7 +180,9 @@ function roomPlayability()
 //		debug(_("There are no opponents in the game."));
 		console(_("There are no opponents in the game"));
 //		gameOverMessage(false);
+		return false;
 	}
+	else {return true;}
 }
 
 function toSpectator(playnum, remove)
@@ -323,6 +325,8 @@ function co_eventGameInit()
 		}
 
 	}
-	roomPlayability();
-	setTimer("checkPlayerVictoryStatus", 3000);
+	if (roomPlayability())
+	{
+		setTimer("checkPlayerVictoryStatus", 3000);
+	}
 }
