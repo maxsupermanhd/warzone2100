@@ -1,3 +1,9 @@
+//The all logic of determining winners, losers and observers.
+//From rules.js, the code from this file is not called.
+//Everything fulfills through eventGameInit event in a separate namespace
+//In rules.js, there was only one hack to save the minimap for the losers and observers function setMainReticule ().
+
+namespace("co_");
 const USERTYPE = {
 	spectator: "spectator",
 	player: {
@@ -160,7 +166,7 @@ function roomPlayability()
 	{
 		for (var splaynum = 0; splaynum < maxPlayers; splaynum++)
 		{
-			if (playnum != splaynum && 
+			if (playnum != splaynum &&
 			playerData[playnum].usertype == USERTYPE.player.fighter &&
 			playerData[splaynum].usertype == USERTYPE.player.fighter &&
 			!inOneTeam (playnum, splaynum))
@@ -169,7 +175,7 @@ function roomPlayability()
 			}
 		}
 	}
-	if (unPlayability) 
+	if (unPlayability)
 	{
 //		debug(_("There are no opponents in the game."));
 		console(_("There are no opponents in the game"));
@@ -221,3 +227,102 @@ function hud()
 	hackPlayIngameAudio();
 }
 
+// /////////////////////////////////////////////////////////////////
+// END CONDITIONS
+
+function checkPlayerVictoryStatus()
+{
+	for (var playnum = 0; playnum < maxPlayers; playnum++)
+	{
+		if (playerData[playnum].usertype === USERTYPE.player.winner)
+		{
+			return; // When the winner is determined, nothing needs to be done.
+		}
+	}
+
+	for (var playnum = 0; playnum < maxPlayers; playnum++)
+	{
+		if (playerData[playnum].usertype === USERTYPE.player.loser)
+		{
+			continue;
+		}
+		//we mark the retired players as lost and give them visibility. we save buildings
+		else if (!canPlay(playnum) && (playerData[playnum].usertype != USERTYPE.spectator))
+		{
+			//See loss check in function canPlay()
+			playerData[playnum].usertype = USERTYPE.player.loser;
+			toSpectator(playnum, false);
+			if  (selectedPlayer == playnum)
+			{
+				gameOverMessage(false);
+			}
+		}
+
+		// Winning Conditions
+		// all participants except teammates (this is not the same as the allies) cannot continue the game
+	}
+
+	var endGame = true;
+	for (var playnum = 0; playnum < maxPlayers; playnum++)
+	{
+		if (playerData[playnum].usertype != USERTYPE.player.fighter)
+		{
+			continue;
+		}
+
+		for (var splaynum = 0; splaynum < maxPlayers; splaynum++)
+		{
+			if (inOneTeam(playnum, splaynum))
+			{
+				continue;
+			}
+			else if (playerData[splaynum].usertype === USERTYPE.player.fighter)
+			{
+				endGame = false;
+			}
+		}
+	}
+
+	if (endGame == true)
+	{
+		for (var playnum = 0; playnum < maxPlayers; playnum++)
+		{
+			if (playerData[playnum].usertype === USERTYPE.player.fighter)
+			{
+				playerData[playnum].usertype = USERTYPE.player.winner;
+			}
+		}
+
+		if (playerData[selectedPlayer].usertype ===  USERTYPE.player.winner)
+		{
+			gameOverMessage(true);
+		}
+		if (playerData[selectedPlayer].usertype == USERTYPE.spectator)
+		{
+//			gameOverMessage(true);
+			console(_("the battle is over, you can leave the room"));
+//			debug("the battle is over, you can leave the room");
+		}
+	}
+}
+
+function co_eventGameInit()
+{
+	for (var playnum = 0; playnum < maxPlayers; playnum++)
+	{
+			//we consider observers to players who cannot play from the beginning of the game
+		if (!canPlay(playnum))
+		{
+			playerData[playnum].usertype = USERTYPE.spectator;
+			toSpectator(playnum, true);
+			continue;
+		}
+		else
+		{
+			playerData[playnum].usertype = USERTYPE.player.fighter;
+		}
+
+	}
+	roomPlayability();
+	setTimer("checkPlayerVictoryStatus", 3000);
+}

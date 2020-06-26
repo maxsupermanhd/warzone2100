@@ -340,18 +340,6 @@ function eventGameInit()
 
 	for (var playnum = 0; playnum < maxPlayers; playnum++)
 	{
-		//we consider observers to players who cannot play from the beginning of the game
-		if (!canPlay(playnum))
-		{
-			playerData[playnum].usertype = USERTYPE.spectator;
-			toSpectator(playnum, true);
-			continue;
-		}
-		else
-		{
-			playerData[playnum].usertype = USERTYPE.player.fighter;
-		}
-
 		enableResearch("R-Sys-Sensor-Turret01", playnum);
 		enableResearch("R-Wpn-MG1Mk1", playnum);
 		enableResearch("R-Sys-Engineering01", playnum);
@@ -418,8 +406,6 @@ function eventGameInit()
 			completeResearchOnTime(Infinity, playnum);
 		}
 	}
-	roomPlayability();
-	setTimer("checkPlayerVictoryStatus", 3000);
 	hackNetOn();
 
 	//Structures might have been removed so we need to update the reticule button states again
@@ -432,97 +418,6 @@ function eventGameInit()
 	}
 	setTimer("autoSave", 10*60*1000);
 }
-
-// /////////////////////////////////////////////////////////////////
-// END CONDITIONS
-
-function checkPlayerVictoryStatus()
-{	
-	for (var playnum = 0; playnum < maxPlayers; playnum++)
-	{	
-		if (playerData[playnum].usertype === USERTYPE.player.winner)
-		{
-			return; // When the winner is determined, nothing needs to be done.
-		}
-	}
-
-	for (var playnum = 0; playnum < maxPlayers; playnum++)
-	{
-		if (playerData[playnum].usertype === USERTYPE.player.loser)
-		{
-			continue;
-		}
-		//we mark the retired players as lost and give them visibility. we save buildings
-		else if (!canPlay(playnum) && (playerData[playnum].usertype != USERTYPE.spectator))
-		{
-			//See loss check in function canPlay()
-			playerData[playnum].usertype = USERTYPE.player.loser;
-			toSpectator(playnum, false);
-			if  (selectedPlayer == playnum)
-			{
-				gameOverMessage(false);
-			}
-		}
-
-		// Winning Conditions
-		// all participants except teammates (this is not the same as the allies) cannot continue the game
-	}
-
-	var endGame = true;
-	for (var playnum = 0; playnum < maxPlayers; playnum++)
-	{	
-		if (playerData[playnum].usertype != USERTYPE.player.fighter)
-		{
-			continue;
-		}
-
-		for (var splaynum = 0; splaynum < maxPlayers; splaynum++)
-		{
-			if (inOneTeam(playnum, splaynum))
-			{
-				continue;
-			}
-			else if (playerData[splaynum].usertype === USERTYPE.player.fighter)
-			{
-				endGame = false;
-			}
-		}
-	}
-
-	if (endGame == true)
-	{	
-		for (var playnum = 0; playnum < maxPlayers; playnum++)
-		{	
-			if (playerData[playnum].usertype === USERTYPE.player.fighter)
-			{
-				playerData[playnum].usertype = USERTYPE.player.winner;
-			}
-			console([
-				playerData[playnum].usertype,
-				playerData[playnum].colour, // fixme
-				playerData[playnum].name,
-				_("Team"),
-				playerData[playnum].team, // fixme
-				_("Position"),
-				playerData[playnum].position
-			].join(" "));
-			debug(JSON.stringify(playerData[playnum]));
-		}
-		
-		if (playerData[selectedPlayer].usertype ===  USERTYPE.player.winner)
-		{
-			gameOverMessage(true);
-		}
-		if (playerData[selectedPlayer].usertype == USERTYPE.spectator)
-		{
-			gameOverMessage(true);
-			console(_("the battle is over, you can leave the room"));
-			debug("the battle is over, you can leave the room");
-		}
-	}
-}
-
-
 // /////////////////////////////////////////////////////////////////
 // WARNING MESSAGES
 // Base Under Attack
