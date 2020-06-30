@@ -20,7 +20,9 @@ function printReportBattle()
 				playerData[playnum].droidLost,
 				playerData[playnum].structureLost,
 				playerData[playnum].kills
-				].join(" "));}
+				].join(" "));
+			debug(JSON.stringify(playerData[playnum]));
+		}
 		if (playerData[selectedPlayer].usertype == USERTYPE.spectator)
 		{
 			console(_("the battle is over, you can leave the room"));
