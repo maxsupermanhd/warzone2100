@@ -231,7 +231,7 @@ function hud()
 
 function autohostWin()
 {
-	gameOverMessage(true);
+	gameOverMessage(false);
 }
 
 // /////////////////////////////////////////////////////////////////
@@ -334,5 +334,8 @@ function co_eventGameInit()
 	if (roomPlayability())
 	{
 		setTimer("checkPlayerVictoryStatus", 3000);
+//		var gameLimit = 30; //time in min
+//		setMissionTime(gameLimit*60);
+//		queue("autohostWin", gameLimit*60*1000);
 	}
 }
