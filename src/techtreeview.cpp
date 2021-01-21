@@ -7,6 +7,7 @@
 #include "frontend.h"
 #include "multiint.h"
 #include "intdisplay.h"
+#include "research.h"
 
 #define TECHTREEVIEW_WINDOW_HEIGHT_MAX 100
 #define SCRIPTDEBUG_BUTTON_HEIGHT 24
@@ -121,7 +122,13 @@ std::shared_ptr<TechTreeThing> TechTreeThing::make() {
 
 	result->createButton(40, 40, "Test?", [](){ debug(LOG_INFO, "test!"); });
 
-	//auto demothing = std::make_shared<IntStatsButton>();
+	auto demothing = std::make_shared<IntStatsButton>();
+	result->attach(demothing);
+	demothing->id = 444;
+	demothing->style |= WFORM_SECONDARY;
+	demothing->setStats(asResearch[0].psStat);
+	demothing->move(40, 70);
+	//result->addWidgetToLayout(demothing);
 
 	return result;
 }
