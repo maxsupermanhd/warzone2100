@@ -15,7 +15,9 @@ public:
 
 	virtual void display(int xOffset, int yOffset) override;
 private:
-	WzText TechHelloWorldText;
+	std::shared_ptr<W_BUTTON> createButton(int offx, int offy, const std::string &text, const std::function<void ()>& onClickFunc);
+
+	WzText cachedTitleText;
 };
 
 bool techtreeshutdown();
