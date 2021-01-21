@@ -81,6 +81,8 @@
 #include "loadsave.h"
 #include "game.h"
 
+#include "techtreeview.h"
+
 #include "activity.h"
 
 /*
@@ -2880,4 +2882,10 @@ void kf_QuickLoad()
 	{
 		console("QuickSave file does not exist yet");
 	}
+}
+
+
+void kf_OpenTechTree() {
+	debug(LOG_INFO, "Opening tech tree for ya");
+	techtreeshow();
 }

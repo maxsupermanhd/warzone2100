@@ -337,6 +337,7 @@ static KeyMapSaveTable const keyMapSaveTable(
 	{kf_FinishResearch, "FinishResearch"},
 	{kf_RevealMapAtPos, "RevealMapAtPos"},
 	{kf_TraceObject, "TraceObject"},
+	{kf_OpenTechTree, "OpenTechTree"},
 });
 
 KeyMapSaveEntry const *keymapEntryByFunction(void (*function)())
@@ -589,6 +590,8 @@ void keyInitMappings(bool bForceDefaults)
 	didAdd = keyAddDefaultMapping(KEYMAP__DEBUG, KEY_LCTRL,  KEY_X, KEYMAP_PRESSED, kf_FinishResearch,    N_("Complete current research"), bForceDefaults) || didAdd;
 	didAdd = keyAddDefaultMapping(KEYMAP__DEBUG, KEY_LSHIFT, KEY_W, KEYMAP_PRESSED, kf_RevealMapAtPos,    N_("Reveal map at mouse position"), bForceDefaults) || didAdd;
 	didAdd = keyAddDefaultMapping(KEYMAP__DEBUG, KEY_LCTRL,  KEY_L, KEYMAP_PRESSED, kf_TraceObject,       N_("Trace a game object"), bForceDefaults) || didAdd;
+
+	didAdd = keyAddDefaultMapping(KEYMAP_ASSIGNABLE, KEY_LSHIFT,  KEY_K, KEYMAP_PRESSED, kf_OpenTechTree,       N_("Open tech tree explorer"), bForceDefaults) || didAdd;
 
 	// ensure sort ordering
 	keyMappings.sort([](const KEY_MAPPING &a, const KEY_MAPPING &b) {
