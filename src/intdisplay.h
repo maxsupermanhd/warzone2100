@@ -211,6 +211,9 @@ public:
 		setStats(stats);
 		setTip(getStatsName(stats));
 	}
+	BASE_STATS *getStats() {
+		return Stat;
+	}
 
 protected:
 	BASE_STATS *Stat;

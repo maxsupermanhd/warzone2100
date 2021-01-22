@@ -82,6 +82,7 @@
 #include "qtscript.h"
 #include "frend.h"
 #include "chat.h"
+#include "techtreeview.h"
 
 // Is a button widget highlighted, either because the cursor is over it or it is flashing.
 // Do not highlight buttons while paused.
@@ -2324,6 +2325,7 @@ void intObjectSelected(BASE_OBJECT *psObj)
 				}
 				else if (((STRUCTURE *)psObj)->pStructureType->type == REF_RESEARCH)
 				{
+					treeviewTriggerSelected(psObj);
 					intAddResearch((STRUCTURE *)psObj);
 				}
 			}

@@ -9,17 +9,20 @@
 #include "intdisplay.h"
 #include "research.h"
 
-#define TECHTREEVIEW_WINDOW_HEIGHT_MAX 100
-#define SCRIPTDEBUG_BUTTON_HEIGHT 24
-#define SCRIPTDEBUG_ROW_HEIGHT 24
-#define ACTION_BUTTON_ROW_SPACING 10
-#define ACTION_BUTTON_SPACING 10
+#define TECHTREEVIEW_WINDOW_HEIGHT_MAX 140
+// #define SCRIPTDEBUG_BUTTON_HEIGHT 24
+// #define SCRIPTDEBUG_ROW_HEIGHT 24
+// #define ACTION_BUTTON_ROW_SPACING 10
+// #define ACTION_BUTTON_SPACING 10
 
 #define TITLE_TOP_PADDING 5
 #define TITLE_HEIGHT 24
 #define TITLE_BOTTOM (TITLE_TOP_PADDING + TITLE_HEIGHT)
 #define TAB_BUTTONS_HEIGHT 24
 #define TAB_BUTTONS_PADDING 10
+#define STAT_GAP			2
+#define STAT_BUTWIDTH		60
+#define STAT_BUTHEIGHT		46
 
 const PIELIGHT WZCOL_DEBUG_FILL_COLOR = pal_RGBA(25, 0, 110, 220);
 const PIELIGHT WZCOL_DEBUG_FILL_COLOR_DARK = pal_RGBA(10, 0, 70, 250);
@@ -29,7 +32,10 @@ const PIELIGHT WZCOL_DEBUG_INDETERMINATE_PROGRESS_COLOR = pal_RGBA(240, 240, 255
 static std::shared_ptr<W_SCREEN> techviewScreen = nullptr;
 static std::shared_ptr<TechTreeThing> techviewDialog = nullptr;
 
+BASE_OBJECT *lastSelectedLab = nullptr;
+
 static std::shared_ptr<W_BUTTON> makeCornerButton(const char* text);
+static std::shared_ptr<W_BUTTON> makeTechButton(BASE_STATS *stats);
 
 TechTreeThing::TechTreeThing() {
 
@@ -120,17 +126,79 @@ std::shared_ptr<TechTreeThing> TechTreeThing::make() {
 		psWidget->setGeometry(psParent->width() - CLOSE_WIDTH, 0, CLOSE_WIDTH, CLOSE_HEIGHT);
 	}));
 
-	result->createButton(40, 40, "Test?", [](){ debug(LOG_INFO, "test!"); });
+	result->createButton(40, 40, "Test?", [](){
+		if(psCBLastResearch) {
+			debug(LOG_INFO, "test!");
+		} else {
+			debug(LOG_INFO, "Last research is null");
+		}
+	});
 
-	auto demothing = std::make_shared<IntStatsButton>();
-	result->attach(demothing);
-	demothing->id = 444;
-	demothing->style |= WFORM_SECONDARY;
-	demothing->setStats(asResearch[0].psStat);
-	demothing->move(40, 70);
+	result->CurrentViewingTechButton = makeTechButton(asResearch[0].psStat);
+	result->CurrentViewingTechButton->move(120, 30);
+	result->attach(result->CurrentViewingTechButton);
+	result->CurrentViewingTechButton->addOnClickHandler([](W_BUTTON& button){
+		auto psParent = std::dynamic_pointer_cast<TechTreeThing>(button.parent());
+		ASSERT_OR_RETURN(, psParent != nullptr, "No parent");
+		wz_info("Hello world");
+	});
 	//result->addWidgetToLayout(demothing);
 
 	return result;
+}
+
+struct TechButtonData {
+	std::shared_ptr<IntStatsButton> tech;
+};
+
+void treeviewTriggerSelected(BASE_OBJECT *psObj) {
+	debug(LOG_INFO, "Triggered selection of lab");
+	lastSelectedLab = psObj;
+	if(techviewDialog) {
+		TechButtonData& data = *static_cast<TechButtonData*>(techviewDialog->CurrentViewingTechButton->pUserData);
+		data.tech->setStats(((RESEARCH_FACILITY *)((STRUCTURE *)psObj)->pFunctionality)->psSubject);
+	}
+}
+
+static void TechButtonDisplayFunc(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset) {
+	assert(psWidget->pUserData != nullptr);
+	TechButtonData& data = *static_cast<TechButtonData*>(psWidget->pUserData);
+	W_BUTTON *psButton = dynamic_cast<W_BUTTON*>(psWidget);
+	ASSERT_OR_RETURN(, psButton, "psWidget is null");
+
+	if(lastSelectedLab) {
+		BASE_STATS *currSubject = ((RESEARCH_FACILITY *)((STRUCTURE *)lastSelectedLab)->pFunctionality)->psSubject;
+		if(data.tech->getStats() != currSubject) {
+			data.tech->setStats(currSubject);
+		}
+	}
+
+	data.tech->state = psButton->getState();
+	data.tech->display(psButton->x()+xOffset, psButton->y()+yOffset);
+	return;
+}
+
+std::shared_ptr<W_BUTTON> makeTechButton(BASE_STATS *stats)
+{
+	auto button = std::make_shared<W_BUTTON>();
+	button->setString("text");
+	button->FontID = font_regular_bold;
+	button->displayFunction = TechButtonDisplayFunc;
+
+	auto statbtn = std::make_shared<IntStatsButton>();
+	statbtn->style |= WFORM_SECONDARY;
+	statbtn->setStats(stats);
+
+	TechButtonData* d = new TechButtonData();
+	d->tech = statbtn;
+	button->pUserData = d;
+	button->setOnDelete([](WIDGET *psWidget) {
+		assert(psWidget->pUserData != nullptr);
+		delete static_cast<TechButtonData *>(psWidget->pUserData);
+		psWidget->pUserData = nullptr;
+	});
+	button->setGeometry(STAT_GAP/2, STAT_GAP/2, STAT_BUTWIDTH, STAT_BUTHEIGHT);
+	return button;
 }
 
 struct CornerButtonDisplayCache
