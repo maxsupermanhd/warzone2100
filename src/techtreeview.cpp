@@ -9,10 +9,10 @@
 #include "intdisplay.h"
 #include "research.h"
 
-#define TECHTREEVIEW_WINDOW_HEIGHT_MAX 140
+#define TECHTREEVIEW_WINDOW_HEIGHT_MAX 440
 // #define SCRIPTDEBUG_BUTTON_HEIGHT 24
 // #define SCRIPTDEBUG_ROW_HEIGHT 24
-// #define ACTION_BUTTON_ROW_SPACING 10
+#define ACTION_BUTTON_ROW_SPACING 10
 // #define ACTION_BUTTON_SPACING 10
 
 #define TITLE_TOP_PADDING 5
@@ -36,6 +36,11 @@ BASE_OBJECT *lastSelectedLab = nullptr;
 
 static std::shared_ptr<W_BUTTON> makeCornerButton(const char* text);
 static std::shared_ptr<W_BUTTON> makeTechButton(BASE_STATS *stats);
+static RESEARCH* ExtractResearchFromLab(BASE_OBJECT *psObj);
+
+struct TechButtonData {
+	std::shared_ptr<IntStatsButton> tech;
+};
 
 TechTreeThing::TechTreeThing() {
 
@@ -127,37 +132,119 @@ std::shared_ptr<TechTreeThing> TechTreeThing::make() {
 	}));
 
 	result->createButton(40, 40, "Test?", [](){
-		if(psCBLastResearch) {
-			debug(LOG_INFO, "test!");
-		} else {
-			debug(LOG_INFO, "Last research is null");
+		if(!lastSelectedLab) {
+			debug(LOG_INFO, "Last lab is null");
+			return;
 		}
+		RESEARCH *currSubject = ((RESEARCH_FACILITY *)((STRUCTURE *)lastSelectedLab)->pFunctionality)->psSubject;
+		if(!currSubject) {
+			debug(LOG_INFO, "subject is null");
+			return;
+		}
+		debug(LOG_INFO, "name: %s", currSubject->name.toUtf8().c_str());
 	});
 
-	result->CurrentViewingTechButton = makeTechButton(asResearch[0].psStat);
-	result->CurrentViewingTechButton->move(120, 30);
-	result->attach(result->CurrentViewingTechButton);
-	result->CurrentViewingTechButton->addOnClickHandler([](W_BUTTON& button){
+	result->SelectedResearch = makeTechButton(nullptr);//asResearch[0].psStat);
+	result->SelectedResearch->move(120, 30);
+	result->attach(result->SelectedResearch);
+	result->SelectedResearch->addOnClickHandler([](W_BUTTON& button){
 		auto psParent = std::dynamic_pointer_cast<TechTreeThing>(button.parent());
 		ASSERT_OR_RETURN(, psParent != nullptr, "No parent");
-		wz_info("Hello world");
+		debug(LOG_INFO, "Hello world");
 	});
 	//result->addWidgetToLayout(demothing);
+
+	result->ResultsTable = JSONTableWidget::make("Research products:");
+	result->attach(result->ResultsTable);
+	result->ResultsTable->setCalcLayout(LAMBDA_CALCLAYOUT_SIMPLE({
+		psWidget->setGeometry(10, 80, 300, 300);
+	}));
+	result->ResultsTable->updateData(result->GetCurrentResearchInfo());
 
 	return result;
 }
 
-struct TechButtonData {
-	std::shared_ptr<IntStatsButton> tech;
-};
+void TechTreeThing::run(W_CONTEXT *psContext) {
+	this->W_FORM::run(psContext);
+
+	if(this->LastWatchingObject != lastSelectedLab && !this->lockResearch) {
+		this->LastWatchingObject = lastSelectedLab;
+		this->SetNewResearchFromLab(this->LastWatchingObject);
+	}
+	if(this->CurrentResearch != ExtractResearchFromLab(this->LastWatchingObject) && !this->lockResearch) {
+		this->SetNewResearch(ExtractResearchFromLab(this->LastWatchingObject));
+	}
+}
+
+void TechTreeThing::UpdateTableData() {
+	this->ResultsTable->updateData(this->GetCurrentResearchInfo());
+}
+void TechTreeThing::UpdateMainButton() {
+	TechButtonData& data = *static_cast<TechButtonData*>(this->SelectedResearch->pUserData);
+	data.tech->setStats(this->CurrentResearch);
+}
+void TechTreeThing::UpdateWidgets() {
+	this->UpdateTableData();
+	this->UpdateMainButton();
+}
+void TechTreeThing::SetNewResearch(RESEARCH* newres) {
+	this->CurrentResearch = newres;
+	this->UpdateWidgets();
+}
+void TechTreeThing::SetNewResearchFromLab(BASE_OBJECT *psObj) {
+	if(!psObj) {
+		debug(LOG_INFO, "nullptr on base object");
+		this->SetNewResearch(nullptr);
+	}
+	this->SetNewResearch(ExtractResearchFromLab(psObj));
+}
+void TechTreeThing::SetNewResearchFromLabAndTrack(BASE_OBJECT *psObj) {
+	if(!psObj) {
+		debug(LOG_INFO, "nullptr on base object");
+		this->SetNewResearch(nullptr);
+		return;
+	}
+	this->SetNewResearchFromLab(psObj);
+	this->LastWatchingObject = psObj;
+}
+void TechTreeThing::TriggerSelectedObject(BASE_OBJECT *psObj) {
+	if(!this->lockResearch) {
+		this->SetNewResearchFromLabAndTrack(psObj);
+	}
+}
 
 void treeviewTriggerSelected(BASE_OBJECT *psObj) {
-	debug(LOG_INFO, "Triggered selection of lab");
+	if(!psObj) {
+		debug(LOG_INFO, "nullptr object selected");
+	} else {
+		debug(LOG_INFO, "Triggered selection of lab");
+	}
 	lastSelectedLab = psObj;
 	if(techviewDialog) {
-		TechButtonData& data = *static_cast<TechButtonData*>(techviewDialog->CurrentViewingTechButton->pUserData);
-		data.tech->setStats(((RESEARCH_FACILITY *)((STRUCTURE *)psObj)->pFunctionality)->psSubject);
+		techviewDialog->TriggerSelectedObject(psObj);
 	}
+}
+
+nlohmann::json TechTreeThing::GetCurrentResearchInfo() {
+	if(!this->CurrentResearch) {
+		return {"no research assigned"};
+	}
+	nlohmann::json r = this->CurrentResearch->results;
+	// r.emplace("name", this->CurrentResearch->name);
+	return r;
+}
+static nlohmann::ordered_json fillResearchResults(RESEARCH* current) {
+	if(!current) {
+		return {"no research assigned"};
+	}
+	return current->results;
+}
+
+static RESEARCH* ExtractResearchFromLab(BASE_OBJECT *psObj) {
+	if(!psObj) {
+		return nullptr;
+	}
+	return ((RESEARCH *)((RESEARCH_FACILITY *)((STRUCTURE *)psObj)->pFunctionality)->psSubject);
 }
 
 static void TechButtonDisplayFunc(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset) {
@@ -166,20 +253,11 @@ static void TechButtonDisplayFunc(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffs
 	W_BUTTON *psButton = dynamic_cast<W_BUTTON*>(psWidget);
 	ASSERT_OR_RETURN(, psButton, "psWidget is null");
 
-	if(lastSelectedLab) {
-		BASE_STATS *currSubject = ((RESEARCH_FACILITY *)((STRUCTURE *)lastSelectedLab)->pFunctionality)->psSubject;
-		if(data.tech->getStats() != currSubject) {
-			data.tech->setStats(currSubject);
-		}
-	}
-
 	data.tech->state = psButton->getState();
 	data.tech->display(psButton->x()+xOffset, psButton->y()+yOffset);
 	return;
 }
-
-std::shared_ptr<W_BUTTON> makeTechButton(BASE_STATS *stats)
-{
+std::shared_ptr<W_BUTTON> makeTechButton(BASE_STATS *stats) {
 	auto button = std::make_shared<W_BUTTON>();
 	button->setString("text");
 	button->FontID = font_regular_bold;
@@ -201,14 +279,10 @@ std::shared_ptr<W_BUTTON> makeTechButton(BASE_STATS *stats)
 	return button;
 }
 
-struct CornerButtonDisplayCache
-{
+struct CornerButtonDisplayCache {
 	WzText text;
 };
-
-static void CornerButtonDisplayFunc(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
-{
-	// Any widget using CornerButtonDisplayFunc must have its pUserData initialized to a (CornerButtonDisplayCache*)
+static void CornerButtonDisplayFunc(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset) {
 	assert(psWidget->pUserData != nullptr);
 	CornerButtonDisplayCache& cache = *static_cast<CornerButtonDisplayCache*>(psWidget->pUserData);
 
@@ -226,15 +300,12 @@ static void CornerButtonDisplayFunc(WIDGET *psWidget, UDWORD xOffset, UDWORD yOf
 	bool isDisabled = (psButton->getState() & WBUT_DISABLE) != 0;
 	bool isHighlight = (psButton->getState() & WBUT_HIGHLIGHT) != 0;
 
-	// Display the button.
-	if (isHighlight)
-	{
+	if (isHighlight) {
 		pie_UniTransBoxFill(x0+1.0f, static_cast<float>(y0 + 1), static_cast<float>(x1 - 1), static_cast<float>(y1 - 1), WZCOL_DEBUG_FILL_COLOR);
 		iV_Box(x0 + 1, y0 + 1, x1 - 1, y1 - 1, pal_RGBA(255, 255, 255, 150));
 	}
 
-	if (haveText)
-	{
+	if (haveText) {
 		cache.text.setText(psButton->pText.toUtf8(), psButton->FontID);
 		int fw = cache.text.width();
 		int fx = x0 + (psButton->width() - fw) / 2;
@@ -247,16 +318,11 @@ static void CornerButtonDisplayFunc(WIDGET *psWidget, UDWORD xOffset, UDWORD yOf
 		}
 		cache.text.render(fx, fy, textColor);
 	}
-
-	if (isDisabled)
-	{
-		// disabled, render something over it!
+	if (isDisabled) {
 		iV_TransBoxFill(x0, y0, x0 + psButton->width(), y0 + psButton->height());
 	}
 }
-
-static std::shared_ptr<W_BUTTON> makeCornerButton(const char* text)
-{
+static std::shared_ptr<W_BUTTON> makeCornerButton(const char* text) {
 	auto button = std::make_shared<W_BUTTON>();
 	button->setString(text);
 	button->FontID = font_regular_bold;
@@ -273,15 +339,10 @@ static std::shared_ptr<W_BUTTON> makeCornerButton(const char* text)
 	return button;
 }
 
-struct TabButtonDisplayCache
-{
+struct TabButtonDisplayCache {
 	WzText text;
 };
-
-
-static void TabButtonDisplayFunc(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
-{
-	// Any widget using TabButtonDisplayFunc must have its pUserData initialized to a (TabButtonDisplayCache*)
+static void TabButtonDisplayFunc(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset) {
 	assert(psWidget->pUserData != nullptr);
 	TabButtonDisplayCache& cache = *static_cast<TabButtonDisplayCache*>(psWidget->pUserData);
 
@@ -299,17 +360,13 @@ static void TabButtonDisplayFunc(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffse
 	bool isDisabled = (psButton->getState() & WBUT_DISABLE) != 0;
 	bool isHighlight = !isDisabled && ((psButton->getState() & WBUT_HIGHLIGHT) != 0);
 
-	// Display the button.
 	auto light_border = WZCOL_DEBUG_BORDER_LIGHT;
 	auto fill_color = isDown || isDisabled ? WZCOL_DEBUG_FILL_COLOR_DARK : WZCOL_DEBUG_FILL_COLOR;
 	iV_ShadowBox(x0, y0, x1, y1, 0, isDown ? pal_RGBA(0,0,0,0) : light_border, isDisabled ? light_border : WZCOL_FORM_DARK, fill_color);
-	if (isHighlight)
-	{
+	if (isHighlight) {
 		iV_Box(x0 + 2, y0 + 2, x1 - 2, y1 - 2, WZCOL_FORM_HILITE);
 	}
-
-	if (haveText)
-	{
+	if (haveText) {
 		cache.text.setText(psButton->pText.toUtf8(), psButton->FontID);
 		int fw = cache.text.width();
 		int fx = x0 + (psButton->width() - fw) / 2;
@@ -323,8 +380,7 @@ static void TabButtonDisplayFunc(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffse
 	}
 }
 
-static std::shared_ptr<W_BUTTON> makeDebugButton(const char* text)
-{
+static std::shared_ptr<W_BUTTON> makeDebugButton(const char* text) {
 	auto button = std::make_shared<W_BUTTON>();
 	button->setString(text);
 	button->FontID = font_regular;
@@ -340,8 +396,7 @@ static std::shared_ptr<W_BUTTON> makeDebugButton(const char* text)
 	return button;
 }
 
-std::shared_ptr<W_BUTTON> TechTreeThing::createButton(int offx, int offy, const std::string &text, const std::function<void ()>& onClickFunc)
-{
+std::shared_ptr<W_BUTTON> TechTreeThing::createButton(int offx, int offy, const std::string &text, const std::function<void ()>& onClickFunc) {
 	auto button = makeDebugButton(text.c_str());
 	button->setGeometry(button->x(), button->y(), button->width() + 10, button->height());
 	attach(button);
@@ -355,12 +410,10 @@ std::shared_ptr<W_BUTTON> TechTreeThing::createButton(int offx, int offy, const 
 }
 
 bool techtreeshutdown() {
-	if (techviewScreen)
-	{
+	if (techviewScreen) {
 		widgRemoveOverlayScreen(techviewScreen);
 	}
-	if (techviewDialog)
-	{
+	if (techviewDialog) {
 		techviewDialog->deleteLater();
 		techviewDialog = nullptr;
 	}
@@ -369,6 +422,9 @@ bool techtreeshutdown() {
 }
 
 void techtreeshow() {
+	if(techviewDialog || techviewDialog) {
+		debug(LOG_INFO, "Tried open tech view twice");//%p %p", techviewDialog, techviewScreen);
+	}
 	techviewScreen = W_SCREEN::make();
 	widgRegisterOverlayScreen(techviewScreen, std::numeric_limits<uint16_t>::max() - 3); // lol pastdue said it's alright
 	techviewScreen->psForm->hide(); // from wzscriptdebug

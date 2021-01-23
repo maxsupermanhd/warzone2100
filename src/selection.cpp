@@ -43,6 +43,7 @@
 #include "warcam.h"
 #include "display.h"
 #include "qtscript.h"
+#include "techtreeview.h"
 #include <algorithm>
 #include <functional>
 #include <vector>
@@ -482,6 +483,7 @@ void selNextSpecifiedBuilding(STRUCTURE_TYPE structType, bool jump)
 			psOldStruct->selected = false;
 		}
 		psResult->selected = true;
+		treeviewTriggerSelected(psResult);
 		triggerEventSelected();
 		jsDebugSelected(psResult);
 	}
