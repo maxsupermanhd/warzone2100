@@ -35,7 +35,7 @@ static std::shared_ptr<TechTreeThing> techviewDialog = nullptr;
 BASE_OBJECT *lastSelectedLab = nullptr;
 
 static std::shared_ptr<W_BUTTON> makeCornerButton(const char* text);
-static std::shared_ptr<W_BUTTON> makeTechButton(BASE_STATS *stats);
+static std::shared_ptr<W_BUTTON> makeTechButton();
 static RESEARCH* ExtractResearchFromLab(BASE_OBJECT *psObj);
 
 struct TechButtonData {
@@ -144,7 +144,7 @@ std::shared_ptr<TechTreeThing> TechTreeThing::make() {
 		debug(LOG_INFO, "name: %s", currSubject->name.toUtf8().c_str());
 	});
 
-	result->SelectedResearch = makeTechButton(nullptr);//asResearch[0].psStat);
+	result->SelectedResearch = makeTechButton();//asResearch[0].psStat);
 	result->SelectedResearch->move(120, 30);
 	result->attach(result->SelectedResearch);
 	result->SelectedResearch->addOnClickHandler([](W_BUTTON& button){
@@ -167,6 +167,17 @@ std::shared_ptr<TechTreeThing> TechTreeThing::make() {
 void TechTreeThing::run(W_CONTEXT *psContext) {
 	this->W_FORM::run(psContext);
 
+	if(lastSelectedLab) {
+		if(lastSelectedLab->died) {
+			lastSelectedLab = nullptr;
+		}
+	}
+	if(this->LastWatchingObject) {
+		if(this->LastWatchingObject->died) {
+			this->LastWatchingObject = nullptr;
+		}
+	}
+
 	if(this->LastWatchingObject != lastSelectedLab && !this->lockResearch) {
 		this->LastWatchingObject = lastSelectedLab;
 		this->SetNewResearchFromLab(this->LastWatchingObject);
@@ -181,7 +192,11 @@ void TechTreeThing::UpdateTableData() {
 }
 void TechTreeThing::UpdateMainButton() {
 	TechButtonData& data = *static_cast<TechButtonData*>(this->SelectedResearch->pUserData);
-	data.tech->setStats(this->CurrentResearch);
+	if(this->CurrentResearch) {
+		data.tech->setStats(this->CurrentResearch);
+	} else {
+		data.tech->setStats(nullptr);
+	}
 }
 void TechTreeThing::UpdateWidgets() {
 	this->UpdateTableData();
@@ -216,8 +231,13 @@ void TechTreeThing::TriggerSelectedObject(BASE_OBJECT *psObj) {
 void treeviewTriggerSelected(BASE_OBJECT *psObj) {
 	if(!psObj) {
 		debug(LOG_INFO, "nullptr object selected");
+		return;
 	} else {
 		debug(LOG_INFO, "Triggered selection of lab");
+	}
+	if(((STRUCTURE *)psObj)->pStructureType->type != REF_RESEARCH) {
+		debug(LOG_INFO, "selected not lab");
+		return;
 	}
 	lastSelectedLab = psObj;
 	if(techviewDialog) {
@@ -229,8 +249,22 @@ nlohmann::json TechTreeThing::GetCurrentResearchInfo() {
 	if(!this->CurrentResearch) {
 		return {"no research assigned"};
 	}
-	nlohmann::json r = this->CurrentResearch->results;
-	// r.emplace("name", this->CurrentResearch->name);
+	nlohmann::json r;
+	r["name"] = this->CurrentResearch->name;
+	r["cost"] = this->CurrentResearch->researchPower;
+	for(auto a : this->CurrentResearch->pPRList) {
+		r["requires"].push_back(asResearch[a].name);
+	}
+	nlohmann::json arr = nlohmann::json::array();
+	for(auto i : asResearch) { // walk through all research
+		for(auto j : i.pPRList) { // walk through all requirements
+			if(asResearch[j].index == this->CurrentResearch->index) {
+				arr.push_back(i.name);
+			}
+		}
+	}
+	r["opens"] = arr;
+	r["results"] = this->CurrentResearch->results;
 	return r;
 }
 static nlohmann::ordered_json fillResearchResults(RESEARCH* current) {
@@ -246,7 +280,6 @@ static RESEARCH* ExtractResearchFromLab(BASE_OBJECT *psObj) {
 	}
 	return ((RESEARCH *)((RESEARCH_FACILITY *)((STRUCTURE *)psObj)->pFunctionality)->psSubject);
 }
-
 static void TechButtonDisplayFunc(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset) {
 	assert(psWidget->pUserData != nullptr);
 	TechButtonData& data = *static_cast<TechButtonData*>(psWidget->pUserData);
@@ -257,7 +290,7 @@ static void TechButtonDisplayFunc(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffs
 	data.tech->display(psButton->x()+xOffset, psButton->y()+yOffset);
 	return;
 }
-std::shared_ptr<W_BUTTON> makeTechButton(BASE_STATS *stats) {
+std::shared_ptr<W_BUTTON> makeTechButton() {
 	auto button = std::make_shared<W_BUTTON>();
 	button->setString("text");
 	button->FontID = font_regular_bold;
@@ -265,7 +298,7 @@ std::shared_ptr<W_BUTTON> makeTechButton(BASE_STATS *stats) {
 
 	auto statbtn = std::make_shared<IntStatsButton>();
 	statbtn->style |= WFORM_SECONDARY;
-	statbtn->setStats(stats);
+	statbtn->setStats(nullptr);
 
 	TechButtonData* d = new TechButtonData();
 	d->tech = statbtn;

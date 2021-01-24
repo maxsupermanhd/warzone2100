@@ -1919,6 +1919,7 @@ static void intProcessObject(UDWORD id)
 				((STRUCTURE *)psObj)->selected = true;
 				triggerEventSelected();
 				jsDebugSelected(psObj);
+				treeviewTriggerSelected(psObj);
 			}
 
 			// don't do this if offWorld and a structure object has been selected
@@ -3932,7 +3933,7 @@ static bool selectResearch(BASE_OBJECT *psObj)
 }
 
 /* Return the stats for a research facility */
-static BASE_STATS *getResearchStats(BASE_OBJECT *psObj)
+BASE_STATS *getResearchStats(BASE_OBJECT *psObj)
 {
 	ASSERT_OR_RETURN(nullptr, psObj != nullptr && psObj->type == OBJ_STRUCTURE, "Invalid Structure pointer");
 	STRUCTURE *psBuilding = (STRUCTURE *)psObj;

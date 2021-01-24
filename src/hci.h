@@ -404,4 +404,7 @@ bool isSecondaryWindowUp();
 
 void intOpenDebugMenu(OBJECT_TYPE id);
 
+/* Return the stats for a research facility */
+BASE_STATS *getResearchStats(BASE_OBJECT *psObj);
+
 #endif // __INCLUDED_SRC_HCI_H__
