@@ -26,6 +26,7 @@ public:
 	void SetNewResearchFromLabAndTrack(BASE_OBJECT *psObj);
 	void TriggerSelectedObject(BASE_OBJECT *psObj);
 	void setLockResearch(bool s);
+	bool getLockResearch();
 
 	nlohmann::json GetCurrentResearchInfo();
 

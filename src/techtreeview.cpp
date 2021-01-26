@@ -192,35 +192,16 @@ std::shared_ptr<TechTreeThing> TechTreeThing::make() {
 		auto psParent = psWidget->parent();
 		psWidget->setGeometry(315, 35, 250, 25);
 	});
-	
-	// auto button = std::make_shared<WzMultiButton>();
-	// result->attach(button);
-	// button->setGeometry(70, 70, 25, 25);//iV_GetImageWidth(FrontImages, IMAGE_DARK_UNLOCKED), iV_GetImageHeight(FrontImages, IMAGE_DARK_UNLOCKED));
-	// button->setTip(std::string("Lock research"));
-	// button->imNormal = Image(FrontImages, IMAGE_DARK_UNLOCKED);
-	// button->imDown = Image(FrontImages, IMAGE_DARK_UNLOCKED);
-	// button->doHighlight = true;
-	// button->tc = MAX_PLAYERS;
-	// addMultiBut((WIDGET&)j.get(), 151515,
-	// 70, 70,
-	// iV_GetImageWidth(FrontImages, IMAGE_DARK_UNLOCKED),
-	// iV_GetImageHeight(FrontImages, IMAGE_DARK_UNLOCKED),
-	// _("Map Can Exceed Limits"), IMAGE_DARK_UNLOCKED, IMAGE_DARK_UNLOCKED, true);
-	// W_BUTINIT lockbtns;
-	// lockbtns.pTip = _("Lock research selection");
-	// lockbtns.pDisplay = intDisplayImageHilight;
-	// lockbtns.UserData = PACKDWORD_TRI(0, IMAGE_DARK_UNLOCKED, IMAGE_DARK_UNLOCKED);
-	// result->LockResearchBtn = std::make_shared<W_BUTTON>(&lockbtns);
-	// result->attach(result->LockResearchBtn);
-	// result->LockResearchBtn->addOnClickHandler([](W_BUTTON& button){
-	// 	auto psParent = std::dynamic_pointer_cast<TechTreeThing>(button.parent());
-	// 	ASSERT_OR_RETURN(, psParent != nullptr, "No parent");
-	// });
-	// result->LockResearchBtn->setCalcLayout(LAMBDA_CALCLAYOUT_SIMPLE({
-	// 	auto psParent = std::dynamic_pointer_cast<TechTreeThing>(psWidget->parent());
-	// 	ASSERT_OR_RETURN(, psParent != nullptr, "No parent");
-	// 	psWidget->setGeometry(220, 35, 18, 18);
-	// }));
+
+	result->LockResearchBtn = makeDebugButton("Track on ");
+	result->LockResearchBtn->setGeometry(result->LockResearchBtn->x(), result->LockResearchBtn->y(), result->LockResearchBtn->width() + 10, result->LockResearchBtn->height());
+	result->attach(result->LockResearchBtn);
+	result->LockResearchBtn->addOnClickHandler([](W_BUTTON& button) {
+		auto psParent = std::dynamic_pointer_cast<TechTreeThing>(button.parent());
+		ASSERT_OR_RETURN(, psParent != nullptr, "No parent");
+		psParent->setLockResearch(!psParent->getLockResearch());
+	});
+	result->LockResearchBtn->move(220, 40);
 
 	return result;
 }
@@ -249,7 +230,16 @@ void TechTreeThing::run(W_CONTEXT *psContext) {
 }
 
 void TechTreeThing::setLockResearch(bool s) {
+	if(s) {
+		this->LockResearchBtn.get()->setString(_("Track off"));
+	} else {
+		this->LockResearchBtn.get()->setString(_("Track on"));
+	}
 	this->lockResearch = s;
+}
+
+bool TechTreeThing::getLockResearch() {
+	return this->lockResearch;
 }
 
 void TechTreeThing::UpdateTableData() {
