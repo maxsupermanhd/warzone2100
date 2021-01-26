@@ -4,6 +4,7 @@
 #include "lib/widget/widget.h"
 #include "lib/widget/form.h"
 #include "lib/widget/jsontable.h"
+#include "lib/widget/dropdown.h"
 
 #include "lib/framework/frame.h"
 
@@ -24,6 +25,7 @@ public:
 	void TrackObject(BASE_OBJECT *psObj);
 	void SetNewResearchFromLabAndTrack(BASE_OBJECT *psObj);
 	void TriggerSelectedObject(BASE_OBJECT *psObj);
+	void setLockResearch(bool s);
 
 	nlohmann::json GetCurrentResearchInfo();
 
@@ -39,6 +41,8 @@ private:
 	std::vector<std::shared_ptr<W_BUTTON>> Requires;
 	std::vector<std::shared_ptr<W_BUTTON>> Unlocks;
 	std::shared_ptr<JSONTableWidget> ResultsTable;
+	std::shared_ptr<DropdownWidget> ResearchSelector;
+	std::shared_ptr<W_BUTTON> LockResearchBtn;
 
 	RESEARCH *CurrentResearch = nullptr;
 	BASE_OBJECT *LastWatchingObject = nullptr;

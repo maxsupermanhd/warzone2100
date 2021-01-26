@@ -8,6 +8,8 @@
 #include "multiint.h"
 #include "intdisplay.h"
 #include "research.h"
+#include "frend.h"
+#include "lib/ivis_opengl/bitimage.h"
 
 #define TECHTREEVIEW_WINDOW_HEIGHT_MAX 440
 // #define SCRIPTDEBUG_BUTTON_HEIGHT 24
@@ -37,6 +39,7 @@ BASE_OBJECT *lastSelectedLab = nullptr;
 static std::shared_ptr<W_BUTTON> makeCornerButton(const char* text);
 static std::shared_ptr<W_BUTTON> makeTechButton();
 static RESEARCH* ExtractResearchFromLab(BASE_OBJECT *psObj);
+static std::shared_ptr<W_BUTTON> makeDebugButton(const char* text);
 
 struct TechButtonData {
 	std::shared_ptr<IntStatsButton> tech;
@@ -161,6 +164,64 @@ std::shared_ptr<TechTreeThing> TechTreeThing::make() {
 	}));
 	result->ResultsTable->updateData(result->GetCurrentResearchInfo());
 
+	result->ResearchSelector = std::make_shared<DropdownWidget>();
+	result->attach(result->ResearchSelector);
+	result->ResearchSelector->setListHeight(400);
+
+	int maxButtonTextWidth = 4;
+	for(auto r : asResearch) {
+		auto button = makeDebugButton(r.name.toUtf8().c_str());
+		button->UserData = static_cast<UDWORD>(r.index);
+		int minButtonTextWidth = button->width();
+		maxButtonTextWidth = std::max<int>(minButtonTextWidth, maxButtonTextWidth);
+		result->ResearchSelector->addItem(button);
+	}
+	result->ResearchSelector->setSelectedIndex(0);
+	result->ResearchSelector->setOnChange([](DropdownWidget& dropdown) {
+		auto psParent = std::dynamic_pointer_cast<TechTreeThing>(dropdown.parent());
+		ASSERT_OR_RETURN(, psParent != nullptr, "No parent");
+		if(auto selectedIndex = dropdown.getSelectedIndex())
+		{
+			int i = static_cast<int>(selectedIndex.value());
+			RESEARCH* r = &asResearch[i];
+			psParent->setLockResearch(true);
+			psParent->SetNewResearch(r);
+		}
+	});
+	result->ResearchSelector->setCalcLayout([](WIDGET *psWidget, unsigned int, unsigned int, unsigned int, unsigned int){
+		auto psParent = psWidget->parent();
+		psWidget->setGeometry(315, 35, 250, 25);
+	});
+	
+	// auto button = std::make_shared<WzMultiButton>();
+	// result->attach(button);
+	// button->setGeometry(70, 70, 25, 25);//iV_GetImageWidth(FrontImages, IMAGE_DARK_UNLOCKED), iV_GetImageHeight(FrontImages, IMAGE_DARK_UNLOCKED));
+	// button->setTip(std::string("Lock research"));
+	// button->imNormal = Image(FrontImages, IMAGE_DARK_UNLOCKED);
+	// button->imDown = Image(FrontImages, IMAGE_DARK_UNLOCKED);
+	// button->doHighlight = true;
+	// button->tc = MAX_PLAYERS;
+	// addMultiBut((WIDGET&)j.get(), 151515,
+	// 70, 70,
+	// iV_GetImageWidth(FrontImages, IMAGE_DARK_UNLOCKED),
+	// iV_GetImageHeight(FrontImages, IMAGE_DARK_UNLOCKED),
+	// _("Map Can Exceed Limits"), IMAGE_DARK_UNLOCKED, IMAGE_DARK_UNLOCKED, true);
+	// W_BUTINIT lockbtns;
+	// lockbtns.pTip = _("Lock research selection");
+	// lockbtns.pDisplay = intDisplayImageHilight;
+	// lockbtns.UserData = PACKDWORD_TRI(0, IMAGE_DARK_UNLOCKED, IMAGE_DARK_UNLOCKED);
+	// result->LockResearchBtn = std::make_shared<W_BUTTON>(&lockbtns);
+	// result->attach(result->LockResearchBtn);
+	// result->LockResearchBtn->addOnClickHandler([](W_BUTTON& button){
+	// 	auto psParent = std::dynamic_pointer_cast<TechTreeThing>(button.parent());
+	// 	ASSERT_OR_RETURN(, psParent != nullptr, "No parent");
+	// });
+	// result->LockResearchBtn->setCalcLayout(LAMBDA_CALCLAYOUT_SIMPLE({
+	// 	auto psParent = std::dynamic_pointer_cast<TechTreeThing>(psWidget->parent());
+	// 	ASSERT_OR_RETURN(, psParent != nullptr, "No parent");
+	// 	psWidget->setGeometry(220, 35, 18, 18);
+	// }));
+
 	return result;
 }
 
@@ -187,6 +248,10 @@ void TechTreeThing::run(W_CONTEXT *psContext) {
 	}
 }
 
+void TechTreeThing::setLockResearch(bool s) {
+	this->lockResearch = s;
+}
+
 void TechTreeThing::UpdateTableData() {
 	this->ResultsTable->updateData(this->GetCurrentResearchInfo());
 }
@@ -203,6 +268,11 @@ void TechTreeThing::UpdateWidgets() {
 	this->UpdateMainButton();
 }
 void TechTreeThing::SetNewResearch(RESEARCH* newres) {
+	if(newres) {
+		debug(LOG_INFO, "setting new research %s", newres->name.toUtf8().c_str());
+	} else {
+		debug(LOG_INFO, "newres is nullptr");
+	}
 	this->CurrentResearch = newres;
 	this->UpdateWidgets();
 }
