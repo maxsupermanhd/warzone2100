@@ -1191,12 +1191,14 @@ INT_RETVAL intRunWidgets()
 		SecondaryWindowUp = true;
 		intRunDesign();
 	}
+	else if (intMode == INT_INTELMAP)
+	{
+		intRunIntelMap();
+	}
 
 	// Deal with any clicks.
-	for (std::vector<unsigned>::const_iterator rit = retIDs.begin(); rit != retIDs.end(); ++rit)
+	for (unsigned int retID : retIDs)
 	{
-		unsigned retID = *rit;
-
 		if (retID >= IDPROX_START && retID <= IDPROX_END)
 		{
 			processProximityButtons(retID);

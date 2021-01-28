@@ -5,7 +5,7 @@ param([string]$VCPKG_BUILD_TYPE = "")
 ############################
 
 # To ensure reproducible builds, pin to a specific vcpkg commit
-$VCPKG_COMMIT_SHA = "d1ef42c0fd7b9d5ac90be74df62b12e1184d02a1";
+$VCPKG_COMMIT_SHA = "450de5f3c61e072323d5ed705909782ea70ed5ea";
 
 # WZ Windows features (for vcpkg install)
 $VCPKG_INSTALL_FEATURES = @()
@@ -67,7 +67,11 @@ If ( -not (Test-Path (Join-Path (pwd) vcpkg\.git) -PathType Container) )
 Else
 {
 	# On CI (for example), the vcpkg directory may have been cached and restored
-	Write-Output "Skipping git clone for vcpkg (local copy already exists)";
+	# Fetch origin updates
+	Write-Output "Fetching origin updates for vcpkg (local copy already exists)";
+	pushd vcpkg;
+	git fetch origin;
+	popd;
 }
 pushd vcpkg;
 git reset --hard $VCPKG_COMMIT_SHA;
