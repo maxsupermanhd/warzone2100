@@ -393,7 +393,7 @@ static bool displayCompObj(DROID *psDroid, bool bButton, const glm::mat4 &viewMa
 
 	glm::mat4 modelMatrix(1.f);
 
-	if (graphicsTime - psDroid->timeLastHit < GAME_TICKS_PER_SEC / 4 && psDroid->lastHitWeapon == WSC_ELECTRONIC && !gamePaused())
+	if (psDroid->timeLastHit - graphicsTime < ELEC_DAMAGE_DURATION && psDroid->lastHitWeapon == WSC_ELECTRONIC && !gamePaused())
 	{
 		colour = getPlayerColour(rand() % MAX_PLAYERS);
 	}
@@ -733,16 +733,16 @@ static bool displayCompObj(DROID *psDroid, bool bButton, const glm::mat4 &viewMa
 						//rotate Y
 						localModelMatrix *= glm::rotate(UNDEG(rot.direction), glm::vec3(0.f, 1.f, 0.f));
 
-						localModelMatrix *= glm::rotate(UNDEG(-player.r.y), glm::vec3(0.f, 1.f, 0.f));
-						localModelMatrix *= glm::rotate(UNDEG(-player.r.x), glm::vec3(1.f, 0.f, 0.f));
+						localModelMatrix *= glm::rotate(UNDEG(-playerPos.r.y), glm::vec3(0.f, 1.f, 0.f));
+						localModelMatrix *= glm::rotate(UNDEG(-playerPos.r.x), glm::vec3(1.f, 0.f, 0.f));
 
 						if (pie_Draw3DShape(psShape, getModularScaledGraphicsTime(psShape->animInterval, psShape->numFrames), 0, brightness, pie_ADDITIVE, 140, viewMatrix * localModelMatrix))
 						{
 							didDrawSomething = true;
 						}
 
-//						localModelMatrix *= glm::rotate(UNDEG(player.r.x), glm::vec3(1.f, 0.f, 0.f)); // Not used?
-//						localModelMatrix *= glm::rotate(UNDEG(player.r.y), glm::vec3(0.f, 1.f, 0.f)); // Not used?
+//						localModelMatrix *= glm::rotate(UNDEG(playerPos.r.x), glm::vec3(1.f, 0.f, 0.f)); // Not used?
+//						localModelMatrix *= glm::rotate(UNDEG(playerPos.r.y), glm::vec3(0.f, 1.f, 0.f)); // Not used?
 					}
 				}
 				break;
@@ -828,11 +828,11 @@ void displayComponentObject(DROID *psDroid, const glm::mat4 &viewMatrix)
 	Vector3i position, rotation;
 	Spacetime st = interpolateObjectSpacetime(psDroid, graphicsTime);
 
-	leftFirst = angleDelta(player.r.y - st.rot.direction) <= 0;
+	leftFirst = angleDelta(playerPos.r.y - st.rot.direction) <= 0;
 
 	/* Get the real position */
-	position.x = st.pos.x - player.p.x;
-	position.z = -(st.pos.y - player.p.z);
+	position.x = st.pos.x - playerPos.p.x;
+	position.z = -(st.pos.y - playerPos.p.z);
 	position.y = st.pos.z;
 
 	if (isTransporter(psDroid))
@@ -852,7 +852,7 @@ void displayComponentObject(DROID *psDroid, const glm::mat4 &viewMatrix)
 		glm::rotate(UNDEG(rotation.x), glm::vec3(1.f, 0.f, 0.f)) *
 		glm::rotate(UNDEG(rotation.z), glm::vec3(0.f, 0.f, 1.f));
 
-	if (graphicsTime - psDroid->timeLastHit < GAME_TICKS_PER_SEC && psDroid->lastHitWeapon == WSC_ELECTRONIC)
+	if (psDroid->timeLastHit - graphicsTime < ELEC_DAMAGE_DURATION && psDroid->lastHitWeapon == WSC_ELECTRONIC)
 	{
 		modelMatrix *= objectShimmy((BASE_OBJECT *) psDroid);
 	}
@@ -865,14 +865,14 @@ void displayComponentObject(DROID *psDroid, const glm::mat4 &viewMatrix)
 
 	if (psDroid->lastHitWeapon == WSC_EMP && graphicsTime - psDroid->timeLastHit < EMP_DISABLE_TIME)
 	{
-		Vector3i position;
+		Vector3i effectPosition;
 
 		//add an effect on the droid
-		position.x = st.pos.x + DROID_EMP_SPREAD;
-		position.y = st.pos.z + rand() % 8;
-		position.z = st.pos.y + DROID_EMP_SPREAD;
+		effectPosition.x = st.pos.x + DROID_EMP_SPREAD;
+		effectPosition.y = st.pos.z + rand() % 8;
+		effectPosition.z = st.pos.y + DROID_EMP_SPREAD;
 		effectGiveAuxVar(90 + rand() % 20);
-		addEffect(&position, EFFECT_EXPLOSION, EXPLOSION_TYPE_PLASMA, false, nullptr, 0);
+		addEffect(&effectPosition, EFFECT_EXPLOSION, EXPLOSION_TYPE_PLASMA, false, nullptr, 0);
 	}
 
 	if (psDroid->visible[selectedPlayer] == UBYTE_MAX)

@@ -148,7 +148,7 @@ bool multiplayerWinSequence(bool firstCall)
 	if (MissionResUp && !getWarCamStatus())
 	{
 		rotAmount = graphicsTimeAdjustedIncrement(MAP_SPIN_RATE / 12);
-		player.r.y += rotAmount;
+		playerPos.r.y += rotAmount;
 	}
 
 	if (last > gameTime)
@@ -787,9 +787,12 @@ bool recvMessage()
 				ingame.JoiningInProgress[player_id] = false;
 				break;
 			}
-		// FIXME: the next 4 cases might not belong here --check (we got two loops for this)
+		// FIXME: the next 5 cases might not belong here --check (we got two loops for this)
 		case NET_COLOURREQUEST:
 			recvColourRequest(queue);
+			break;
+		case NET_FACTIONREQUEST:
+			recvFactionRequest(queue);
 			break;
 		case NET_POSITIONREQUEST:
 			recvPositionRequest(queue);

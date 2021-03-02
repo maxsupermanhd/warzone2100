@@ -105,7 +105,8 @@ bool statsAllocConstruct(UDWORD numEntries);
 /*******************************************************************************
 *		Load stats functions
 *******************************************************************************/
-void loadStats(WzConfig &json, BASE_STATS *psStats, size_t index);
+// Used from structure.cpp
+void loadStructureStats_BaseStats(WzConfig &json, STRUCTURE_STATS *psStats, size_t index);
 
 /*Load the weapon stats from the file exported from Access*/
 bool loadWeaponStats(WzConfig &ini);
@@ -161,6 +162,12 @@ int getCompFromID(COMPONENT_TYPE compType, const WzString &name);
 
 /// Get the component pointer for a component based on the name
 COMPONENT_STATS *getCompStatsFromName(const WzString &name);
+
+/// Get the structure pointer for a structure based on the name
+STRUCTURE_STATS *getStructStatsFromName(const WzString &name);
+
+/// Get the base stat pointer for a stat based on the name
+BASE_STATS *getBaseStatsFromName(const WzString &name);
 
 /*returns the weapon sub class based on the string name passed in */
 bool getWeaponSubClass(const char *subClass, WEAPON_SUBCLASS *wclass);
@@ -235,6 +242,9 @@ WZ_DECL_PURE bool objHasWeapon(const BASE_OBJECT *psObj);
 void statsInitVars();
 
 bool getWeaponEffect(const WzString& weaponEffect, WEAPON_EFFECT *effect);
+/*returns the weapon effect string based on the enum passed in */
+const char *getWeaponEffect(WEAPON_EFFECT effect);
+
 bool getWeaponClass(const WzString& weaponClassStr, WEAPON_CLASS *weaponClass);
 
 /* Wrappers */

@@ -556,7 +556,7 @@ namespace wzapi
 	class scripting_instance : public scripting_event_handling_interface
 	{
 	public:
-		scripting_instance(int player, const std::string& scriptName);
+		scripting_instance(int player, const std::string& scriptName, const std::string& scriptPath);
 		virtual ~scripting_instance();
 
 	public:
@@ -564,11 +564,35 @@ namespace wzapi
 
 	public:
 		const std::string& scriptName() const { return m_scriptName; }
+		const std::string& scriptPath() const { return m_scriptPath; }
 		int player() const { return m_player; }
 
 	public:
 		inline void setReceiveAllEvents(bool value) { m_isReceivingAllEvents = value; }
 		inline bool isReceivingAllEvents() const { return m_isReceivingAllEvents; }
+
+	public:
+		// Helpers for loading a file from the "context" of a scripting_instance
+		class LoadFileSearchOptions
+		{
+		public:
+			static const uint32_t ScriptPath_FileNameOnlyBackwardsCompat = 0x00000001;
+			static const uint32_t ScriptPath = 0x00000002;
+			static const uint32_t DataDir = 0x00000004;
+			static const uint32_t ConfigScriptDir = 0x00000008;
+			static const uint32_t All = ScriptPath | DataDir | ConfigScriptDir;
+			static const uint32_t All_BackwardsCompat = ScriptPath_FileNameOnlyBackwardsCompat | All;
+		};
+
+		// Loads a file.
+		// (Intended for use from implementations of things like "include" functions.)
+		//
+		// Lookup order is as follows (based on the value of `searchFlags`):
+		// - 1.) The filePath is checked relative to the read-only data dir search paths (LoadFileSearchOptions::DataDir)
+		// - 2.) The filePath is checked relative to "<user's config dir>/script/" (LoadFileSearchOptions::ConfigScriptDir)
+		// - 3.) The filename *only* is checked relative to the main scriptPath (LoadFileSearchOptions::ScriptPath_FileNameOnlyBackwardsCompat) - for backwards-compat only
+		// - 4.) The filePath is checked relative to the main scriptPath (LoadFileSearchOptions::ScriptPath)
+		bool loadFileForInclude(const std::string& filePath, std::string& loadedFilePath, char **ppFileData, UDWORD *pFileSize, uint32_t searchFlags = LoadFileSearchOptions::All);
 
 	public:
 		// event handling
@@ -623,6 +647,7 @@ namespace wzapi
 	private:
 		int m_player;
 		std::string m_scriptName;
+		std::string m_scriptPath;
 		bool m_isReceivingAllEvents = false;
 	};
 

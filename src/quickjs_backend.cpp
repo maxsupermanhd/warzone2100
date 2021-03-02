@@ -148,8 +148,8 @@ static void QJSRuntimeFree_LeakHandler_Error(const char* msg)
 class quickjs_scripting_instance : public wzapi::scripting_instance
 {
 public:
-	quickjs_scripting_instance(int player, const std::string& scriptName)
-	: scripting_instance(player, scriptName)
+	quickjs_scripting_instance(int player, const std::string& scriptName, const std::string& scriptPath)
+	: scripting_instance(player, scriptName, scriptPath)
 	{
 		rt = JS_NewRuntime();
 		ctx = JS_NewContext(rt);
@@ -2280,6 +2280,11 @@ static std::string QuickJS_DumpError(JSContext *ctx)
 	return result;
 }
 
+static bool strEndsWith(const std::string &str, const std::string &suffix)
+{
+	return (str.size() >= suffix.size()) && (str.compare(str.size() - suffix.size(), suffix.size(), suffix) == 0);
+}
+
 //-- ## include(file)
 //-- Includes another source code file at this point. You should generally only specify the filename,
 //-- not try to specify its path, here.
@@ -2288,38 +2293,25 @@ static std::string QuickJS_DumpError(JSContext *ctx)
 static JSValue js_include(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
 {
 	SCRIPT_ASSERT(ctx, argc == 1, "Must specify a file to include");
-	JSValue global_obj = JS_GetGlobalObject(ctx);
-	auto free_global_obj = gsl::finally([ctx, global_obj] { JS_FreeValue(ctx, global_obj); });  // establish exit action
-	std::string basePath = QuickJS_GetStdString(ctx, global_obj, "scriptPath");
-	std::string basenameStr = JSValueToStdString(ctx, argv[0]);
-	WzPathInfo basename = WzPathInfo::fromPlatformIndependentPath(basenameStr);
-	std::string path = basePath + "/" + basename.fileName();
-	// allow users to use subdirectories too
-	if (PHYSFS_exists(basename.filePath().c_str()))
-	{
-		path = basename.filePath(); // use this path instead (from read-only dir)
-	}
-	else if (PHYSFS_exists((std::string("scripts/") + basename.filePath()).c_str()))
-	{
-		path = "scripts/" + basename.filePath(); // use this path instead (in user write dir)
-	}
+	std::string filePath = JSValueToStdString(ctx, argv[0]);
+	SCRIPT_ASSERT(ctx, strEndsWith(filePath, ".js"), "Include file must end in .js");
+	const auto instance = engineToInstanceMap.at(ctx);
 	UDWORD size;
 	char *bytes = nullptr;
-	if (!loadFile(path.c_str(), &bytes, &size))
+	std::string loadedFilePath;
+	if (!instance->loadFileForInclude(filePath.c_str(), loadedFilePath, &bytes, &size, wzapi::scripting_instance::LoadFileSearchOptions::All_BackwardsCompat))
 	{
-		debug(LOG_ERROR, "Failed to read include file \"%s\" (path=%s, name=%s)",
-		      path.c_str(), basePath.c_str(), basename.filePath().c_str());
-		JS_ThrowReferenceError(ctx, "Failed to read include file \"%s\" (path=%s, name=%s)", path.c_str(), basePath.c_str(), basename.filePath().c_str());
+		debug(LOG_ERROR, "Failed to read include file \"%s\"", filePath.c_str());
+		JS_ThrowReferenceError(ctx, "Failed to read include file \"%s\"", filePath.c_str());
 		return JS_FALSE;
 	}
-	JSValue compiledFuncObj = JS_Eval(ctx, bytes, size, path.c_str(), JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
+	JSValue compiledFuncObj = JS_Eval(ctx, bytes, size, loadedFilePath.c_str(), JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
 	free(bytes);
 	if (JS_IsException(compiledFuncObj))
 	{
 		// compilation error / syntax error
 		std::string errorAsString = QuickJS_DumpError(ctx);
-		debug(LOG_ERROR, "Syntax error in include file %s: %s",
-			  path.c_str(), errorAsString.c_str());
+		debug(LOG_ERROR, "Syntax error in include file %s: %s", loadedFilePath.c_str(), errorAsString.c_str());
 		JS_FreeValue(ctx, compiledFuncObj);
 		compiledFuncObj = JS_UNINITIALIZED;
 		return JS_FALSE;
@@ -2329,14 +2321,38 @@ static JSValue js_include(JSContext *ctx, JSValueConst this_val, int argc, JSVal
 	if (JS_IsException(result))
 	{
 		std::string errorAsString = QuickJS_DumpError(ctx);
-		debug(LOG_ERROR, "Uncaught exception in include file %s: %s",
-		      path.c_str(), errorAsString.c_str());
+		debug(LOG_ERROR, "Uncaught exception in include file %s: %s", loadedFilePath.c_str(), errorAsString.c_str());
 		JS_FreeValue(ctx, result);
 		return JS_FALSE;
     }
     JS_FreeValue(ctx, result);
-	debug(LOG_SCRIPT, "Included new script file %s", path.c_str());
+	debug(LOG_SCRIPT, "Included new script file %s", loadedFilePath.c_str());
 	return JS_TRUE;
+}
+
+//-- ## includeJSON(file)
+//-- Reads a JSON file and returns an object. You should generally only specify the filename,
+//-- However, *if* you specify sub-paths / sub-folders, the path separator should **always** be forward-slash ("/").
+//--
+static JSValue js_includeJSON(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv)
+{
+	SCRIPT_ASSERT(ctx, argc == 1, "Must specify a file to include");
+	std::string filePath = JSValueToStdString(ctx, argv[0]);
+	SCRIPT_ASSERT(ctx, strEndsWith(filePath, ".json"), "Include file must end in .json");
+	const auto instance = engineToInstanceMap.at(ctx);
+	UDWORD size;
+	char *bytes = nullptr;
+	std::string loadedFilePath;
+	if (!instance->loadFileForInclude(filePath.c_str(), loadedFilePath, &bytes, &size, wzapi::scripting_instance::LoadFileSearchOptions::ScriptPath))
+	{
+		debug(LOG_ERROR, "Failed to read include file \"%s\"", filePath.c_str());
+		JS_ThrowReferenceError(ctx, "Failed to read include file \"%s\"", filePath.c_str());
+		return JS_FALSE;
+	}
+	JSValue r = JS_ParseJSON(ctx, bytes, size, loadedFilePath.c_str());
+	free(bytes);
+	debug(LOG_SCRIPT, "Included new JSON file %s", loadedFilePath.c_str());
+	return r;
 }
 
 class quickjs_timer_additionaldata : public timerAdditionalData
@@ -2613,22 +2629,22 @@ static JSValue runMap_setMapData(JSContext *ctx, JSValueConst this_val, int argc
 	auto &data = *static_cast<ScriptMapData*>(pOpaque);
 	data.valid = false;
 	SCRIPT_ASSERT_AND_RETURNERROR(ctx, argc == 7, "Must have 7 parameters");
-	auto mapWidth = argv[0];
-	auto mapHeight = argv[1];
+	auto jsVal_mapWidth = argv[0];
+	auto jsVal_mapHeight = argv[1];
 	auto texture = argv[2];
 	auto height = argv[3];
 	auto structures = argv[4];
 	auto droids = argv[5];
 	auto features = argv[6];
-	SCRIPT_ASSERT_AND_RETURNERROR(ctx, JS_IsNumber(mapWidth), "mapWidth must be number");
-	SCRIPT_ASSERT_AND_RETURNERROR(ctx, JS_IsNumber(mapHeight), "mapHeight must be number");
+	SCRIPT_ASSERT_AND_RETURNERROR(ctx, JS_IsNumber(jsVal_mapWidth), "mapWidth must be number");
+	SCRIPT_ASSERT_AND_RETURNERROR(ctx, JS_IsNumber(jsVal_mapHeight), "mapHeight must be number");
 	SCRIPT_ASSERT_AND_RETURNERROR(ctx, JS_IsArray(ctx, texture), "texture must be array");
 	SCRIPT_ASSERT_AND_RETURNERROR(ctx, JS_IsArray(ctx, height), "height must be array");
 	SCRIPT_ASSERT_AND_RETURNERROR(ctx, JS_IsArray(ctx, structures), "structures must be array");
 	SCRIPT_ASSERT_AND_RETURNERROR(ctx, JS_IsArray(ctx, droids), "droids must be array");
 	SCRIPT_ASSERT_AND_RETURNERROR(ctx, JS_IsArray(ctx, features), "features must be array");
-	data.mapWidth = JSValueToInt32(ctx, mapWidth);
-	data.mapHeight = JSValueToInt32(ctx, mapHeight);
+	data.mapWidth = JSValueToInt32(ctx, jsVal_mapWidth);
+	data.mapHeight = JSValueToInt32(ctx, jsVal_mapHeight);
 	SCRIPT_ASSERT_AND_RETURNERROR(ctx, data.mapWidth > 1 && data.mapHeight > 1 && (uint64_t)data.mapWidth*data.mapHeight <= 65536, "Map size out of bounds");
 	size_t N = (size_t)data.mapWidth*data.mapHeight;
 	data.texture.resize(N);
@@ -2840,7 +2856,7 @@ ScriptMapData runMapScript_QuickJS(WzString const &path, uint64_t seed, bool pre
 wzapi::scripting_instance* createQuickJSScriptInstance(const WzString& path, int player, int difficulty)
 {
 	WzPathInfo basename = WzPathInfo::fromPlatformIndependentPath(path.toUtf8());
-	quickjs_scripting_instance* pNewInstance = new quickjs_scripting_instance(player, basename.baseName());
+	quickjs_scripting_instance* pNewInstance = new quickjs_scripting_instance(player, basename.baseName(), basename.path());
 	if (!pNewInstance->loadScript(path, player, difficulty))
 	{
 		delete pNewInstance;
@@ -2890,6 +2906,7 @@ static const JSCFunctionListEntry js_builtin_funcs[] = {
 	QJS_CFUNC_DEF("removeTimer", 1, js_removeTimer ), // JS-specific implementation
 	QJS_CFUNC_DEF("profile", 1, js_profile ), // JS-specific implementation
 	QJS_CFUNC_DEF("include", 1, js_include ), // backend-specific (a scripting_instance can't directly include a different type of script)
+	QJS_CFUNC_DEF("includeJSON", 1, js_includeJSON ), // JS-specific JSON loading
 	QJS_CFUNC_DEF("namespace", 1, js_namespace ), // JS-specific implementation
 	QJS_CFUNC_DEF("debugGetCallerFuncObject", 0, debugGetCallerFuncObject ), // backend-specific
 	QJS_CFUNC_DEF("debugGetCallerFuncName", 0, debugGetCallerFuncName ), // backend-specific
@@ -3099,9 +3116,9 @@ bool quickjs_scripting_instance::debugEvaluateCommand(const std::string &text)
 	return true;
 }
 
-void quickjs_scripting_instance::updateGameTime(uint32_t gameTime)
+void quickjs_scripting_instance::updateGameTime(uint32_t newGameTime)
 {
-	int ret = JS_DefinePropertyValueStr(ctx, global_obj, "gameTime", JS_NewUint32(ctx, gameTime), JS_PROP_WRITABLE | JS_PROP_ENUMERABLE);
+	int ret = JS_DefinePropertyValueStr(ctx, global_obj, "gameTime", JS_NewUint32(ctx, newGameTime), JS_PROP_WRITABLE | JS_PROP_ENUMERABLE);
 	ASSERT(ret >= 1, "Failed to update gameTime");
 }
 
@@ -3844,4 +3861,3 @@ void to_json(nlohmann::json& j, const JSContextValue& v) {
 		}
 	}
 }
-

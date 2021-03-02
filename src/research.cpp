@@ -99,6 +99,60 @@ bool researchInitVars()
 	return true;
 }
 
+class CycleDetection
+{
+private:
+	CycleDetection() {}
+
+	std::unordered_set<RESEARCH *> visited;
+	std::unordered_set<RESEARCH *> exploring;
+
+	nonstd::optional<std::deque<RESEARCH *>> explore(RESEARCH *research)
+	{
+		if (visited.find(research) != visited.end())
+		{
+			return nonstd::nullopt;
+		}
+
+		if (exploring.find(research) != exploring.end())
+		{
+			return {{research}};
+		}
+
+		exploring.insert(research);
+
+		for (auto requirementIndex: research->pPRList)
+		{
+			auto requirement = &asResearch[requirementIndex];
+			if (auto cycle = explore(requirement))
+			{
+				cycle->push_front(research);
+				return cycle;
+			}
+		}
+
+		exploring.erase(exploring.find(research));
+		visited.insert(research);
+		return nonstd::nullopt;
+	}
+
+public:
+	static nonstd::optional<std::deque<RESEARCH *>> detectCycle()
+	{
+		CycleDetection detection;
+
+		for (auto &research: asResearch)
+		{
+			if (auto cycle = detection.explore(&research))
+			{
+				return cycle;
+			}
+		}
+
+		return nonstd::nullopt;
+	}
+};
+
 /** Load the research stats */
 bool loadResearch(WzConfig &ini)
 {
@@ -185,8 +239,8 @@ bool loadResearch(WzConfig &ini)
 		research.psStat = nullptr;
 		if (statID.compare("") != 0)
 		{
-			//try find the structure stat with given name
-			research.psStat = getCompStatsFromName(statID);
+			//try find the stat with given name
+			research.psStat = getBaseStatsFromName(statID);
 			ASSERT_OR_RETURN(false, research.psStat, "Could not find stats for %s research %s", statID.toUtf8().c_str(), getStatsName(&research));
 		}
 
@@ -350,6 +404,16 @@ bool loadResearch(WzConfig &ini)
 		}
 	}
 
+	if (auto cycle = CycleDetection::detectCycle())
+	{
+		debug(LOG_ERROR, "A cycle was detected in the research dependency graph:");
+		for (auto research: cycle.value())
+		{
+			debug(LOG_ERROR, "\t-> %s", research->id.toUtf8().c_str());
+		}
+		return false;
+	}
+
 	return true;
 }
 
@@ -468,35 +532,35 @@ There can only be 'limit' number of entries
 'topic' is the currently researched topic
 */
 // NOTE by AJL may 99 - skirmish now has it's own version of this, skTopicAvail.
-UWORD fillResearchList(UWORD *plist, UDWORD playerID, UWORD topic, UWORD limit)
+std::vector<uint16_t> fillResearchList(UDWORD playerID, nonstd::optional<UWORD> topic, UWORD limit)
 {
-	UWORD				inc, count = 0;
+	std::vector<uint16_t> list;
 
-	for (inc = 0; inc < asResearch.size(); inc++)
+	for (auto inc = 0; inc < asResearch.size(); inc++)
 	{
 		// if the inc matches the 'topic' - automatically add to the list
-		if (inc == topic || researchAvailable(inc, playerID, ModeQueue))
+		if ((topic.has_value() && inc == topic.value()) || researchAvailable(inc, playerID, ModeQueue))
 		{
-			*plist++ = inc;
-			count++;
-			if (count == limit)
+			list.push_back(inc);
+			if (list.size() == limit)
 			{
-				return count;
+				return list;
 			}
 		}
 	}
-	return count;
+
+	return list;
 }
 
 /* process the results of a completed research topic */
 void researchResult(UDWORD researchIndex, UBYTE player, bool bDisplay, STRUCTURE *psResearchFacility, bool bTrigger)
 {
-	RESEARCH                                       *pResearch = &asResearch[researchIndex];
+	ASSERT_OR_RETURN(, researchIndex < asResearch.size(), "Invalid research index %u", researchIndex);
+
+	RESEARCH                    *pResearch = &asResearch[researchIndex];
 	MESSAGE						*pMessage;
 	//the message gets sent to console
 	char						consoleMsg[MAX_RESEARCH_MSG_SIZE];
-
-	ASSERT_OR_RETURN(, researchIndex < asResearch.size(), "Invalid research index %u", researchIndex);
 
 	syncDebug("researchResult(%u, %u, …)", researchIndex, player);
 
@@ -860,79 +924,6 @@ static UWORD setIconID(const char *pIconName, const char *pName)
 	ASSERT(false, "Invalid icon graphic %s for topic %s", pIconName, pName);
 
 	return NO_RESEARCH_ICON;	// Should never get here.
-}
-
-
-SDWORD	mapRIDToIcon(UDWORD rid)
-{
-	switch (rid)
-	{
-	case RID_ROCKET:
-		return (IMAGE_ROCKET);
-		break;
-	case RID_CANNON:
-		return (IMAGE_CANNON);
-		break;
-	case RID_HOVERCRAFT:
-		return (IMAGE_HOVERCRAFT);
-		break;
-	case RID_ECM:
-		return (IMAGE_ECM);
-		break;
-	case RID_PLASCRETE:
-		return (IMAGE_PLASCRETE);
-		break;
-	case RID_TRACKS:
-		return (IMAGE_TRACKS);
-		break;
-	case RID_DROIDTECH:
-		return (IMAGE_RES_DROIDTECH);
-		break;
-	case RID_WEAPONTECH:
-		return (IMAGE_RES_WEAPONTECH);
-		break;
-	case RID_COMPUTERTECH:
-		return (IMAGE_RES_COMPUTERTECH);
-		break;
-	case RID_POWERTECH:
-		return (IMAGE_RES_POWERTECH);
-		break;
-	case RID_SYSTEMTECH:
-		return (IMAGE_RES_SYSTEMTECH);
-		break;
-	case RID_STRUCTURETECH:
-		return (IMAGE_RES_STRUCTURETECH);
-		break;
-	case RID_CYBORGTECH:
-		return (IMAGE_RES_CYBORGTECH);
-		break;
-	case RID_DEFENCE:
-		return (IMAGE_RES_DEFENCE);
-		break;
-	case RID_QUESTIONMARK:
-		return (IMAGE_RES_QUESTIONMARK);
-		break;
-	case RID_GRPACC:
-		return (IMAGE_RES_GRPACC);
-		break;
-	case RID_GRPUPG:
-		return (IMAGE_RES_GRPUPG);
-		break;
-	case RID_GRPREP:
-		return (IMAGE_RES_GRPREP);
-		break;
-	case RID_GRPROF:
-		return (IMAGE_RES_GRPROF);
-		break;
-	case RID_GRPDAM:
-		return (IMAGE_RES_GRPDAM);
-		break;
-
-	default:
-		ASSERT(false, "Weirdy mapping request for RID to icon");
-		return (-1); //pass back a value that can never have been set up
-		break;
-	}
 }
 
 SDWORD	mapIconToRID(UDWORD iconID)

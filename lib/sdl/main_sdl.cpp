@@ -472,7 +472,11 @@ WINDOW_MODE wzGetCurrentWindowMode()
 		// return a dummy value
 		return WINDOW_MODE::windowed;
 	}
-	ASSERT_OR_RETURN(WINDOW_MODE::windowed, WZwindow != nullptr, "window is null");
+	if (WZwindow == nullptr)
+	{
+		debug(LOG_WARNING, "wzGetCurrentWindowMode called when window is not available");
+		return WINDOW_MODE::windowed;
+	}
 
 	Uint32 flags = SDL_GetWindowFlags(WZwindow);
 	if ((flags & SDL_WINDOW_FULLSCREEN_DESKTOP) == SDL_WINDOW_FULLSCREEN_DESKTOP)
@@ -1496,29 +1500,29 @@ void wzGetMinimumWindowSizeForDisplayScaleFactor(unsigned int *minWindowWidth, u
 	}
 }
 
-void wzGetMaximumDisplayScaleFactorsForWindowSize(unsigned int windowWidth, unsigned int windowHeight, float *horizScaleFactor, float *vertScaleFactor)
+void wzGetMaximumDisplayScaleFactorsForWindowSize(unsigned int width, unsigned int height, float *horizScaleFactor, float *vertScaleFactor)
 {
 	if (horizScaleFactor != nullptr)
 	{
-		*horizScaleFactor = (float)windowWidth / (float)MIN_WZ_GAMESCREEN_WIDTH;
+		*horizScaleFactor = (float)width / (float)MIN_WZ_GAMESCREEN_WIDTH;
 	}
 	if (vertScaleFactor != nullptr)
 	{
-		*vertScaleFactor = (float)windowHeight / (float)MIN_WZ_GAMESCREEN_HEIGHT;
+		*vertScaleFactor = (float)height / (float)MIN_WZ_GAMESCREEN_HEIGHT;
 	}
 }
 
-float wzGetMaximumDisplayScaleFactorForWindowSize(unsigned int windowWidth, unsigned int windowHeight)
+float wzGetMaximumDisplayScaleFactorForWindowSize(unsigned int width, unsigned int height)
 {
 	float maxHorizScaleFactor = 0.f, maxVertScaleFactor = 0.f;
-	wzGetMaximumDisplayScaleFactorsForWindowSize(windowWidth, windowHeight, &maxHorizScaleFactor, &maxVertScaleFactor);
+	wzGetMaximumDisplayScaleFactorsForWindowSize(width, height, &maxHorizScaleFactor, &maxVertScaleFactor);
 	return std::min(maxHorizScaleFactor, maxVertScaleFactor);
 }
 
 // returns: the maximum display scale percentage (sourced from wzAvailableDisplayScales), or 0 if window is below the minimum required size for the minimum supported display scale
-unsigned int wzGetMaximumDisplayScaleForWindowSize(unsigned int windowWidth, unsigned int windowHeight)
+unsigned int wzGetMaximumDisplayScaleForWindowSize(unsigned int width, unsigned int height)
 {
-	float maxDisplayScaleFactor = wzGetMaximumDisplayScaleFactorForWindowSize(windowWidth, windowHeight);
+	float maxDisplayScaleFactor = wzGetMaximumDisplayScaleFactorForWindowSize(width, height);
 	unsigned int maxDisplayScalePercentage = floor(maxDisplayScaleFactor * 100.f);
 
 	auto availableDisplayScales = wzAvailableDisplayScales();
@@ -1567,11 +1571,11 @@ unsigned int wzGetSuggestedDisplayScaleForCurrentWindowSize(unsigned int desired
 	return maxDisplayScale;
 }
 
-bool wzWindowSizeIsSmallerThanMinimumRequired(unsigned int windowWidth, unsigned int windowHeight, float displayScaleFactor = current_displayScaleFactor)
+bool wzWindowSizeIsSmallerThanMinimumRequired(unsigned int width, unsigned int height, float displayScaleFactor = current_displayScaleFactor)
 {
 	unsigned int minWindowWidth = 0, minWindowHeight = 0;
 	wzGetMinimumWindowSizeForDisplayScaleFactor(&minWindowWidth, &minWindowHeight, displayScaleFactor);
-	return ((windowWidth < minWindowWidth) || (windowHeight < minWindowHeight));
+	return ((width < minWindowWidth) || (height < minWindowHeight));
 }
 
 void processScreenSizeChangeNotificationIfNeeded()
@@ -2049,6 +2053,21 @@ void wzSDLPreWindowCreate_InitOpenGLAttributes(bool antialiasing, bool useOpenGL
 	}
 }
 
+void wzSDLPreWindowCreate_InitVulkanLibrary()
+{
+#if defined(WZ_OS_MAC)
+	// Attempt to explicitly load libvulkan.dylib with a full path
+	// to support situations where run-time search paths using @executable_path are prohibited
+	std::string fullPathToVulkanLibrary = cocoaGetFrameworksPath("libvulkan.dylib");
+	if (SDL_Vulkan_LoadLibrary(fullPathToVulkanLibrary.c_str()) != 0)
+	{
+		debug(LOG_ERROR, "Failed to explicitly load Vulkan library");
+	}
+#else
+	// rely on SDL's built-in loading paths / behavior
+#endif
+}
+
 // This stage, we handle display mode setting
 optional<SDL_gfx_api_Impl_Factory::Configuration> wzMainScreenSetup_CreateVideoWindow(const video_backend& backend, int antialiasing, WINDOW_MODE fullscreen, int vsync, bool highDPI)
 {
@@ -2071,9 +2090,13 @@ optional<SDL_gfx_api_Impl_Factory::Configuration> wzMainScreenSetup_CreateVideoW
 	// (i.e. not taking into account the game display scale). This function later sets the display system
 	// to the *game screen* width and height (taking into account the display scale).
 
-	if(usesSDLBackend_OpenGL)
+	if (usesSDLBackend_OpenGL)
 	{
 		wzSDLPreWindowCreate_InitOpenGLAttributes(antialiasing, useOpenGLES, useOpenGLESLibrary);
+	}
+	else if (backend == video_backend::vulkan)
+	{
+		wzSDLPreWindowCreate_InitVulkanLibrary();
 	}
 
 	// Populated our resolution list (does all displays now)
@@ -2541,18 +2564,18 @@ void wzGetWindowToRendererScaleFactor(float *horizScaleFactor, float *vertScaleF
 	SDL_WZBackend_GetDrawableSize(WZwindow, &drawableWidth, &drawableHeight);
 
 	// Obtain the logical window size (in points)
-	int windowWidth, windowHeight = 0;
-	SDL_GetWindowSize(WZwindow, &windowWidth, &windowHeight);
+	int logicalWindowWidth, logicalWindowHeight = 0;
+	SDL_GetWindowSize(WZwindow, &logicalWindowWidth, &logicalWindowHeight);
 
-	debug(LOG_WZ, "Window Logical Size (%d, %d) vs Drawable Size in Pixels (%d, %d)", windowWidth, windowHeight, drawableWidth, drawableHeight);
+	debug(LOG_WZ, "Window Logical Size (%d, %d) vs Drawable Size in Pixels (%d, %d)", logicalWindowWidth, logicalWindowHeight, drawableWidth, drawableHeight);
 
 	if (horizScaleFactor != nullptr)
 	{
-		*horizScaleFactor = ((float)drawableWidth / (float)windowWidth) * current_displayScaleFactor;
+		*horizScaleFactor = ((float)drawableWidth / (float)logicalWindowWidth) * current_displayScaleFactor;
 	}
 	if (vertScaleFactor != nullptr)
 	{
-		*vertScaleFactor = ((float)drawableHeight / (float)windowHeight) * current_displayScaleFactor;
+		*vertScaleFactor = ((float)drawableHeight / (float)logicalWindowHeight) * current_displayScaleFactor;
 	}
 
 	int displayIndex = SDL_GetWindowDisplayIndex(WZwindow);

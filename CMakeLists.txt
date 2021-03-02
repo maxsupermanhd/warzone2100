@@ -1,9 +1,24 @@
-cmake_minimum_required(VERSION 3.5)
+cmake_minimum_required(VERSION 3.5...3.14)
+
+if(DEFINED ENV{VCPKG_DEFAULT_TRIPLET} AND NOT DEFINED VCPKG_TARGET_TRIPLET)
+  set(VCPKG_TARGET_TRIPLET "$ENV{VCPKG_DEFAULT_TRIPLET}" CACHE STRING "")
+endif()
+
 project(warzone2100)
+
+if(${CMAKE_VERSION} VERSION_LESS 3.12)
+    cmake_policy(VERSION ${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION})
+endif()
+
+include(CMakeDependentOption)
 
 OPTION(ENABLE_DOCS "Enable documentation generation" ON)
 OPTION(ENABLE_NLS "Native Language Support" ON)
-OPTION(WZ_PORTABLE "Portable (Windows-only)" ON)
+if(CMAKE_SYSTEM_NAME MATCHES "Windows")
+	set(_enableOSOptions_Windows TRUE)
+endif()
+cmake_dependent_option(WZ_PORTABLE "Portable build (Windows-only)" ON "_enableOSOptions_Windows" OFF)
+unset(_enableOSOptions_Windows)
 OPTION(WZ_ENABLE_WARNINGS "Enable (additional) warnings" OFF)
 OPTION(WZ_ENABLE_WARNINGS_AS_ERRORS "Enable compiler flags that treat (most) warnings as errors" ON)
 OPTION(WZ_ENABLE_BACKEND_VULKAN "Enable Vulkan backend" ON)
@@ -119,14 +134,19 @@ if(CMAKE_HOST_SYSTEM_NAME MATCHES "Darwin")
 	list(APPEND CMAKE_PREFIX_PATH "/usr/local/opt/gettext")
 endif()
 
+INCLUDE(AddTargetLinkFlagsIfSupported)
+
 # Use "-fPIC" / "-fPIE" for all targets by default, including static libs
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-# CMake doesn't add "-pie" by default for executables (CMake issue #14983)
-INCLUDE(AddTargetLinkFlagsIfSupported)
-CHECK_CXX_LINKER_FLAGS("${CMAKE_EXE_LINKER_FLAGS} -pie" LINK_FLAG_PIE_SUPPORTED)
-if(LINK_FLAG_PIE_SUPPORTED AND NOT CMAKE_SYSTEM_NAME MATCHES "Windows" AND NOT CMAKE_SYSTEM_NAME MATCHES "Darwin")
-	set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -pie")
+if (CMAKE_VERSION VERSION_LESS 3.14)
+	# CMake < 3.14 doesn't add "-pie" by default for executables (CMake issue #14983)
+	CHECK_CXX_LINKER_FLAGS("${CMAKE_EXE_LINKER_FLAGS} -pie" LINK_FLAG_PIE_SUPPORTED)
+	if(LINK_FLAG_PIE_SUPPORTED AND NOT CMAKE_SYSTEM_NAME MATCHES "Windows" AND NOT CMAKE_SYSTEM_NAME MATCHES "Darwin")
+		set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -pie")
+	endif()
+elseif(POLICY CMP0083)
+	cmake_policy(SET CMP0083 NEW) # Apply -pie link flag if supported
 endif()
 
 if("${CMAKE_CXX_COMPILER_ID}" MATCHES "MSVC")
@@ -182,6 +202,15 @@ else()
 		set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fstack-protector")
 	endif()
 endif()
+# Enable -fstack-clash-protection if available
+check_c_compiler_flag(-fstack-clash-protection HAS_CFLAG_FSTACK_CLASH_PROTECTION)
+if (HAS_CFLAG_FSTACK_CLASH_PROTECTION)
+	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fstack-clash-protection")
+endif()
+check_cxx_compiler_flag(-fstack-clash-protection HAS_CXXFLAG_FSTACK_CLASH_PROTECTION)
+if (HAS_CXXFLAG_FSTACK_CLASH_PROTECTION)
+	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fstack-clash-protection")
+endif()
 
 include(CheckCompilerFlagsOutput)
 
@@ -228,9 +257,8 @@ macro(CONFIGURE_WZ_COMPILER_WARNINGS)
 		# C4836: nonstandard extension used : 'type' : local types or unnamed types cannot be used as template arguments
 		set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /w14836")
 
-#		# NOTE: The following cannot currently be enabled because of Qt headers (at least Qt 5.6.x)
-#		# C4946: reinterpret_cast used between related classes: 'class1' and 'class2'
-#		set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /w14946")
+		# C4946: reinterpret_cast used between related classes: 'class1' and 'class2'
+		set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /w14946")
 
 		if (WZ_ENABLE_WARNINGS_AS_ERRORS)
 			# Enable /WX
@@ -249,22 +277,12 @@ macro(CONFIGURE_WZ_COMPILER_WARNINGS)
 		set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /wd4100")
 		# C4244: 'conversion' conversion from 'type1' to 'type2', possible loss of data // FIXME!!
 		set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /wd4244")
-		# C4456: declaration of 'identifier' hides previous local declaration
-		set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /wd4456")
-		# C4459: declaration of 'identifier' hides global declaration
-		set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /wd4459")
 		# C4702: unreachable code
 		set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /wd4702")
 		# C4245: 'conversion' : conversion from 'type1' to 'type2', signed/unsigned mismatch
 		set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /wd4245")
-		# C4701: Potentially uninitialized local variable 'name' used
-		set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /wd4701")
 		# C4706: assignment within conditional expression
 		set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /wd4706")
-
-		# Qt headers (at least 5.6.x) necessitate disabling some warnings
-		# C4127: conditional expression is constant
-		set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /wd4127")
 
 	elseif(CMAKE_GENERATOR STREQUAL "Xcode")
 		# Set Xcode generator project-level configuration + warning flags
@@ -322,11 +340,19 @@ macro(CONFIGURE_WZ_COMPILER_WARNINGS)
 		# Custom Warning Flags - No Error Tweaks
 		set(CMAKE_XCODE_ATTRIBUTE_WARNING_CFLAGS "${CMAKE_XCODE_ATTRIBUTE_WARNING_CFLAGS} -Wno-error=deprecated-declarations")
 
+		set(_supported_cxx_compiler_flags "")
+
+		# -Wno-shadow-field-in-constructor (Clang 3.9+)
+		check_compiler_flags_output("-Werror -Wno-shadow-field-in-constructor -Wno-error=cpp" COMPILER_TYPE CXX OUTPUT_FLAGS "-Wno-shadow-field-in-constructor" OUTPUT_VARIABLE _supported_cxx_compiler_flags APPEND)
+
+		message( STATUS "Supported additional CXX compiler_flags=${_supported_cxx_compiler_flags}" )
+		set(CMAKE_XCODE_ATTRIBUTE_WARNING_CFLAGS "${CMAKE_XCODE_ATTRIBUTE_WARNING_CFLAGS} ${_supported_cxx_compiler_flags}")
+
 		# Apple Clang - Preprocessing
 		set(CMAKE_XCODE_ATTRIBUTE_ENABLE_STRICT_OBJC_MSGSEND YES)
 
 		# Apple Clang - Warning Policies
-#		set(CMAKE_XCODE_ATTRIBUTE_GCC_WARN_PEDANTIC YES)	# Cannot currently enable in Xcode because of Qt headers
+		list(APPEND WZ_TARGET_ADDITIONAL_PROPERTIES XCODE_ATTRIBUTE_GCC_WARN_PEDANTIC YES)
 		if (WZ_ENABLE_WARNINGS_AS_ERRORS)
 			# Enable GCC_TREAT_WARNINGS_AS_ERRORS for WZ targets only
 			list(APPEND WZ_TARGET_ADDITIONAL_PROPERTIES XCODE_ATTRIBUTE_GCC_TREAT_WARNINGS_AS_ERRORS YES)
@@ -341,7 +367,7 @@ macro(CONFIGURE_WZ_COMPILER_WARNINGS)
 		set(CMAKE_XCODE_ATTRIBUTE_CLANG_WARN_DOCUMENTATION_COMMENTS NO)				# -Wdocumentation		[DISABLED]
 		set(CMAKE_XCODE_ATTRIBUTE_CLANG_WARN_EMPTY_BODY YES)						# -Wempty-body
 		set(CMAKE_XCODE_ATTRIBUTE_GCC_WARN_FOUR_CHARACTER_CONSTANTS YES)			# -Wfour-char-constants
-		set(CMAKE_XCODE_ATTRIBUTE_GCC_WARN_SHADOW NO)								# -Wshadow				[DISABLED] - FIXME
+		set(CMAKE_XCODE_ATTRIBUTE_GCC_WARN_SHADOW YES)								# -Wshadow
 		set(CMAKE_XCODE_ATTRIBUTE_CLANG_WARN_BOOL_CONVERSION YES)					# -Wbool-conversion
 		set(CMAKE_XCODE_ATTRIBUTE_CLANG_WARN_CONSTANT_CONVERSION YES)				# -Wconstant-conversion
 		set(CMAKE_XCODE_ATTRIBUTE_GCC_WARN_64_TO_32_BIT_CONVERSION NO)				# -Wshorten-64-to-32	[DISABLED] - FIXME
@@ -493,10 +519,20 @@ macro(CONFIGURE_WZ_COMPILER_WARNINGS)
 		# -Wnon-virtual-dtor		(GCC 3.4+, Clang 3.2+) [C++ only]
 		check_compiler_flags_output("-Werror -Wnon-virtual-dtor -Wno-error=cpp" COMPILER_TYPE CXX OUTPUT_FLAGS "-Wnon-virtual-dtor" OUTPUT_VARIABLE _supported_cxx_compiler_flags APPEND)
 
-#		# FUTURE-TODO: Enable -Wshadow (lots of warnings to fix, some due to 3rdparty dependencies?)
-#		# -Wshadow					(GCC 3.4+, Clang 3.2+)
-#		check_compiler_flags_output("-Werror -Wshadow -Wno-error=cpp" COMPILER_TYPE C   OUTPUT_FLAGS "-Wshadow" OUTPUT_VARIABLE _supported_c_compiler_flags APPEND)
-#		check_compiler_flags_output("-Werror -Wshadow -Wno-error=cpp" COMPILER_TYPE CXX OUTPUT_FLAGS "-Wshadow" OUTPUT_VARIABLE _supported_cxx_compiler_flags APPEND)
+		# -Wshadow					(GCC 3.4+, Clang 3.2+)
+		# NOTE: -Wshadow on GCC is currently too noisy, but Clang 3.9+ is much more selective
+		if (CMAKE_C_COMPILER_ID MATCHES "Clang" AND (NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS 3.9))
+			check_compiler_flags_output("-Werror -Wshadow -Wno-error=cpp" COMPILER_TYPE C   OUTPUT_FLAGS "-Wshadow" OUTPUT_VARIABLE _supported_c_compiler_flags APPEND)
+
+			# -Wno-shadow-field-in-constructor (Clang 3.9+)
+			check_compiler_flags_output("-Werror -Wno-shadow-field-in-constructor -Wno-error=cpp" COMPILER_TYPE C   OUTPUT_FLAGS "-Wno-shadow-field-in-constructor" OUTPUT_VARIABLE _supported_c_compiler_flags APPEND)
+		endif()
+		if (CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND (NOT CMAKE_CXX_COMPILER_VERSION VERSION_LESS 3.9))
+			check_compiler_flags_output("-Werror -Wshadow -Wno-error=cpp" COMPILER_TYPE CXX OUTPUT_FLAGS "-Wshadow" OUTPUT_VARIABLE _supported_cxx_compiler_flags APPEND)
+
+			# -Wno-shadow-field-in-constructor (Clang 3.9+)
+			check_compiler_flags_output("-Werror -Wno-shadow-field-in-constructor -Wno-error=cpp" COMPILER_TYPE CXX OUTPUT_FLAGS "-Wno-shadow-field-in-constructor" OUTPUT_VARIABLE _supported_cxx_compiler_flags APPEND)
+		endif()
 
 #		# FUTURE-TODO: Enable -Wuseless-cast (large number of warnings to fix)
 #		# -Wuseless-cast			(GCC 4.8+)

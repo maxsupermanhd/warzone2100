@@ -1,5 +1,3 @@
-cmake_minimum_required(VERSION 3.5)
-
 include(GNUInstallDirs)
 
 ############################
@@ -71,7 +69,7 @@ if(ENABLE_NLS)
 endif()
 
 file(GLOB HEADERS "*.h" "3rdparty/*.h" "titleui/*.h")
-file(GLOB SRC "*.cpp" "3rdparty/*.cpp" "titleui/*.cpp")
+file(GLOB SRC "*.cpp" "3rdparty/*.cpp" "titleui/*.cpp" "hci/*.cpp")
 
 set(_additionalSourceFiles)
 if(CMAKE_SYSTEM_NAME MATCHES "Windows")
@@ -298,6 +296,9 @@ if(CMAKE_SYSTEM_NAME MATCHES "Darwin")
 	target_sources(warzone2100 PRIVATE ${_wz_entitlements_file})
 	set_target_properties(warzone2100 PROPERTIES XCODE_ATTRIBUTE_CODE_SIGN_ENTITLEMENTS "${_wz_entitlements_file}")
 
+	# Enable Hardened Runtime
+	set_target_properties(warzone2100 PROPERTIES XCODE_ATTRIBUTE_ENABLE_HARDENED_RUNTIME "YES")
+
 	# To properly bundle the resources, they must be built before the app
 	add_dependencies(warzone2100 data)
 	if(ENABLE_DOCS)
@@ -482,8 +483,10 @@ if(CMAKE_SYSTEM_NAME MATCHES "Darwin")
 		endif(Vulkan_FOUND)
 	endif(WZ_ENABLE_BACKEND_VULKAN)
 
-	# Set install RPATH for WZ app bundle
-	set_target_properties(warzone2100 PROPERTIES INSTALL_RPATH "@executable_path/../Frameworks")
+	if (BUILD_SHARED_LIBS)
+		# Set install RPATH for WZ app bundle
+		set_target_properties(warzone2100 PROPERTIES INSTALL_RPATH "@executable_path/../Frameworks")
+	endif()
 
 	# Since the dependencies are bundled as part of the build stages (and not at install-time), build with the install rpath
 	set_target_properties(warzone2100 PROPERTIES BUILD_WITH_INSTALL_RPATH True)
@@ -507,6 +510,8 @@ set_target_properties(warzone2100 PROPERTIES
 set_target_properties(warzone2100 PROPERTIES
 	XCODE_GENERATE_SCHEME TRUE
 	XCODE_SCHEME_ARGUMENTS "--gfxdebug"
+	# Disable NSDocumentRevisionsDebugMode
+	XCODE_SCHEME_DEBUG_DOCUMENT_VERSIONING "NO"
 )
 
 #######################
@@ -524,9 +529,17 @@ if(CMAKE_SYSTEM_NAME MATCHES "Windows")
 endif()
 
 if(NOT CMAKE_SYSTEM_NAME MATCHES "Darwin")
+	# Ensure noexecstack
+	ADD_TARGET_LINK_FLAGS_IF_SUPPORTED(TARGET warzone2100 LINK_FLAGS "-Wl,-z,noexecstack" CACHED_RESULT_NAME LINK_FLAG_WL_Z_NOEXECSTACK_SUPPORTED)
 	# Enable RELRO (if supported)
 	ADD_TARGET_LINK_FLAGS_IF_SUPPORTED(TARGET warzone2100 LINK_FLAGS "-Wl,-z,relro" CACHED_RESULT_NAME LINK_FLAG_WL_Z_RELRO_SUPPORTED)
 	ADD_TARGET_LINK_FLAGS_IF_SUPPORTED(TARGET warzone2100 LINK_FLAGS "-Wl,-z,now" CACHED_RESULT_NAME LINK_FLAG_WL_Z_NOW_SUPPORTED)
+endif()
+
+if(CMAKE_SYSTEM_NAME MATCHES "Darwin")
+	if (NOT BUILD_SHARED_LIBS)
+		ADD_TARGET_LINK_FLAGS_IF_SUPPORTED(TARGET warzone2100 LINK_FLAGS "-Wl,-sectcreate,__RESTRICT,__restrict,/dev/null" CONFIG RELEASE CACHED_RESULT_NAME LINK_FLAG_WL_SECTCREATE_RESTRICT_SUPPORTED)
+	endif()
 endif()
 
 #######################

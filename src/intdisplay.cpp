@@ -93,9 +93,6 @@ static int FormCloseCount;	// Count used to ensure only one sfx played when two 
 
 static UDWORD ManuPower = 0;	// Power required to manufacture the current item.
 
-// Get the first factory assigned to a command droid
-static STRUCTURE *droidGetCommandFactory(DROID *psDroid);
-
 // Set audio IDs for form opening/closing anims.
 // Use -1 to dissable audio.
 //
@@ -128,7 +125,7 @@ static void formatTimeText(W_BARGRAPH *barGraph, int time)
 	barGraph->textCol = WZCOL_CONSTRUCTION_BARTEXT;
 }
 
-static void formatTime(W_BARGRAPH *barGraph, int buildPointsDone, int buildPointsTotal, int buildRate, char const *toolTip)
+void formatTime(W_BARGRAPH *barGraph, int buildPointsDone, int buildPointsTotal, int buildRate, char const *toolTip)
 {
 	barGraph->setTip(toolTip);
 
@@ -154,7 +151,7 @@ static void formatPowerText(W_BARGRAPH *barGraph, int neededPower)
 	barGraph->textCol = WZCOL_POWERQUEUE_BARTEXT;
 }
 
-static void formatPower(W_BARGRAPH *barGraph, int neededPower, int powerToBuild)
+void formatPower(W_BARGRAPH *barGraph, int neededPower, int powerToBuild)
 {
 	if (neededPower == -1 || powerToBuild == 0)
 	{
@@ -165,391 +162,6 @@ static void formatPower(W_BARGRAPH *barGraph, int neededPower, int powerToBuild)
 	barGraph->setTip(_("Waiting for Power"));
 	formatPowerText(barGraph, neededPower);
 	setBarGraphValue(barGraph, WZCOL_GREEN, powerToBuild - neededPower, powerToBuild);
-}
-
-// Widget callback to update the progress bar in the object stats screen.
-//
-void intUpdateProgressBar(WIDGET *psWidget, W_CONTEXT *psContext)
-{
-	BASE_OBJECT			*psObj;
-	DROID				*Droid;
-	STRUCTURE			*Structure;
-	FACTORY				*Manufacture;
-	RESEARCH_FACILITY	*Research;
-	W_BARGRAPH			*BarGraph = (W_BARGRAPH *)psWidget;
-
-	psObj = (BASE_OBJECT *)BarGraph->pUserData;	// Get the object associated with this widget.
-
-	if (psObj == nullptr)
-	{
-		BarGraph->hide();
-		return;
-	}
-
-	if (isDead((BASE_OBJECT *)psObj))
-	{
-		return;
-	}
-
-	BarGraph->majorSize = 0;
-	BarGraph->hide();
-
-	switch (psObj->type)
-	{
-	case OBJ_DROID:						// If it's a droid and...
-		Droid = (DROID *)psObj;
-
-		if (DroidIsBuilding(Droid)) // Is it a building.
-		{
-			ASSERT(Droid->asBits[COMP_CONSTRUCT], "Invalid droid type");
-
-			Structure = DroidGetBuildStructure(Droid);  // Get the structure's building.
-
-			if (Structure)
-			{
-				//show progress of build
-				if (Structure->currentBuildPts != 0)
-				{
-					formatTime(BarGraph, Structure->currentBuildPts, structureBuildPointsToCompletion(*Structure), Structure->lastBuildRate, _("Build Progress"));
-				}
-				else
-				{
-					formatPower(BarGraph, checkPowerRequest(Structure), Structure->pStructureType->powerToBuild);
-				}
-			}
-		}
-		break;
-
-	case OBJ_STRUCTURE:					// If it's a structure and...
-		Structure = (STRUCTURE *)psObj;
-
-		if (StructIsFactory(Structure) && StructureIsManufacturingPending(Structure))  // Is it manufacturing.
-		{
-			Manufacture = StructureGetFactory(Structure);
-
-			if (Manufacture->psSubject != nullptr && Manufacture->buildPointsRemaining < calcTemplateBuild(Manufacture->psSubject))
-			{
-				// Started production. Set the colour of the bar to yellow.
-				int buildPointsTotal = calcTemplateBuild(FactoryGetTemplate(Manufacture));
-				int buildRate = Manufacture->timeStartHold == 0 ? getBuildingProductionPoints(Structure) : 0;
-				formatTime(BarGraph, buildPointsTotal - Manufacture->buildPointsRemaining, buildPointsTotal, buildRate, _("Construction Progress"));
-			}
-			else
-			{
-				// Not yet started production.
-				int neededPower = checkPowerRequest(Structure);
-				int powerToBuild = Manufacture->psSubject ? calcTemplatePower(Manufacture->psSubject) : 0;
-				formatPower(BarGraph, neededPower, powerToBuild);
-			}
-		}
-		else if (structureIsResearchingPending(Structure)) // Is it researching.
-		{
-			Research = StructureGetResearch(Structure);
-			unsigned currentPoints = 0;
-			if (Research->psSubject != nullptr)
-			{
-				currentPoints = asPlayerResList[selectedPlayer][Research->psSubject->index].currentPoints;
-			}
-			if (currentPoints != 0)
-			{
-				int researchRate = Research->timeStartHold == 0 ? getBuildingResearchPoints(Structure) : 0;
-				formatTime(BarGraph, currentPoints, Research->psSubject->researchPoints, researchRate, _("Research Progress"));
-			}
-			else
-			{
-				// Not yet started production.
-				int neededPower = checkPowerRequest(Structure);
-				int powerToBuild = Research->psSubject != nullptr ? Research->psSubject->researchPower : 0;
-				formatPower(BarGraph, neededPower, powerToBuild);
-			}
-		}
-
-		break;
-
-	default:
-		ASSERT(false, "Invalid object type");
-	}
-}
-
-
-void intUpdateQuantity(WIDGET *psWidget, W_CONTEXT *psContext)
-{
-	W_LABEL *Label = (W_LABEL *)psWidget;
-	BASE_OBJECT *psObj = (BASE_OBJECT *)Label->pUserData; // Get the object associated with this widget.
-
-	int remaining = -1;
-
-	if (STRUCTURE *psStruct = castStructure(psObj))
-	{
-		if (StructIsFactory(psStruct) && StructureIsManufacturingPending(psStruct))
-		{
-			ASSERT(!isDead(psObj), "Object is dead");
-
-			DROID_TEMPLATE *psTemplate = FactoryGetTemplate(StructureGetFactory(psStruct));
-			remaining = getProduction(psStruct, psTemplate).numRemaining();
-		}
-	}
-	else if (DROID *psDroid = castDroid(psObj))
-	{
-		STRUCTURE_STATS const *stats = nullptr;
-		int count = 0;
-		auto processOrder = [&](DroidOrder const &order) {
-			STRUCTURE_STATS *newStats = nullptr;
-			int deltaCount = 0;
-			switch (order.type)
-			{
-				case DORDER_BUILD:
-				case DORDER_LINEBUILD:
-					newStats = order.psStats;
-					deltaCount = order.type == DORDER_LINEBUILD? 1 + (abs(order.pos.x - order.pos2.x) + abs(order.pos.y - order.pos2.y))/TILE_UNITS : 1;
-					break;
-				case DORDER_HELPBUILD:
-					if (STRUCTURE *target = castStructure(order.psObj))
-					{
-						newStats = target->pStructureType;
-						deltaCount = 1;
-					}
-					break;
-				default:
-					return false;
-			}
-			if (newStats != nullptr && (stats == nullptr || stats == newStats))
-			{
-				stats = newStats;
-				count += deltaCount;
-				return true;
-			}
-			return false;
-		};
-		if (processOrder(psDroid->order))
-		{
-			for (auto const &order : psDroid->asOrderList)
-			{
-				if (!processOrder(order))
-				{
-					break;
-				}
-			}
-		}
-		if (count > 1)
-		{
-			remaining = count;
-		}
-	}
-
-	if (remaining != -1)
-	{
-		char tmp[20];
-		ssprintf(tmp, "%d", remaining);
-		Label->setString(WzString::fromUtf8(tmp));
-		Label->show();
-	}
-	else
-	{
-		Label->hide();
-	}
-}
-
-//callback to display the factory number
-void intAddFactoryInc(WIDGET *psWidget, W_CONTEXT *psContext)
-{
-	W_LABEL		*Label = (W_LABEL *)psWidget;
-	BASE_OBJECT	*psObj = (BASE_OBJECT *)Label->pUserData;
-
-	// Get the object associated with this widget.
-	if (psObj != nullptr && !isDead(psObj))
-	{
-		STRUCTURE	*Structure = (STRUCTURE *)psObj;
-		if (StructIsFactory(Structure))
-		{
-			FACTORY		*Factory = &Structure->pFunctionality->factory;
-			char tmp[20];
-			ssprintf(tmp, "%u", Factory->psAssemblyPoint->factoryInc + 1);
-			Label->setString(WzString::fromUtf8(tmp));
-			Label->show();
-			return;
-		}
-	}
-	Label->setString("");
-	Label->hide();
-}
-
-//callback to display the production quantity number for a template
-void intAddProdQuantity(WIDGET *psWidget, W_CONTEXT *psContext)
-{
-	W_LABEL				*Label = (W_LABEL *)psWidget;
-	DROID_TEMPLATE                 *psTemplate = (DROID_TEMPLATE *)Label->pUserData;
-
-	// Get the object associated with this widget.
-	if (psTemplate != nullptr)
-	{
-		STRUCTURE	*psStructure = nullptr;
-		BASE_OBJECT	*psObj = getCurrentSelected();
-
-		if (psObj != nullptr && psObj->type == OBJ_STRUCTURE && !isDead(psObj))
-		{
-			psStructure = (STRUCTURE *)psObj;
-		}
-
-		ProductionRunEntry entry;
-		if (psStructure != nullptr && StructIsFactory(psStructure))
-		{
-			entry = getProduction(psStructure, psTemplate);
-		}
-
-		// now find out how many we have built
-		if (entry.isValid())
-		{
-			char tmp[40];
-			if (psStructure->pFunctionality->factory.productionLoops != 0)
-			{
-				ssprintf(tmp, "%u/%u", entry.numRemaining(), entry.quantity);
-			}
-			else
-			{
-				ssprintf(tmp, "%u", entry.numRemaining());
-			}
-			Label->setString(WzString::fromUtf8(tmp));
-			Label->show();
-		}
-		else
-		{
-			Label->setString("");
-			Label->hide();
-		}
-	}
-}
-
-//callback to display the production loop quantity number for a factory
-void intAddLoopQuantity(WIDGET *psWidget, W_CONTEXT *psContext)
-{
-	W_LABEL		*Label = (W_LABEL *)psWidget;
-	STRUCTURE	*psStruct = (STRUCTURE *)Label->pUserData;
-
-	//loop depends on the factory
-	if (psStruct && psStruct->pFunctionality && !psStruct->died)
-	{
-		FACTORY *psFactory = &psStruct->pFunctionality->factory;
-
-		if (psFactory->productionLoops == INFINITE_PRODUCTION)
-		{
-			Label->setString(WzString::fromUtf8("∞"));
-		}
-		else if (psFactory->productionLoops != 0)
-		{
-			char tmp[20];
-			ssprintf(tmp, "%u", psFactory->productionLoops + DEFAULT_LOOP);
-			Label->setString(WzString::fromUtf8(tmp));
-		}
-		else
-		{
-			Label->setString("");  // Don't show "1" loop.
-		}
-		Label->show();
-	}
-	else
-	{
-		//hide the label if no factory
-		Label->setString("");
-		Label->hide();
-	}
-}
-
-// callback to update the command droid size label
-void intUpdateCommandSize(WIDGET *psWidget, W_CONTEXT *psContext)
-{
-	W_LABEL				*Label = (W_LABEL *)psWidget;
-	BASE_OBJECT			*psObj = (BASE_OBJECT *)Label->pUserData;
-
-	// Get the object associated with this widget.
-	if (psObj != nullptr && !isDead(psObj))
-	{
-		DROID	*psDroid = (DROID *)psObj;
-
-		ASSERT(psDroid->droidType == DROID_COMMAND,
-		       "Droid is not a command droid");
-
-		char tmp[40];
-		ssprintf(tmp, "%u/%u", psDroid->psGroup ? psDroid->psGroup->getNumMembers() : 0, cmdDroidMaxGroup(psDroid));
-		Label->setString(WzString::fromUtf8(tmp));
-		Label->show();
-	}
-	else
-	{
-		Label->setString("");
-		Label->hide();
-	}
-}
-
-// callback to update the command droid experience
-void intUpdateCommandExp(WIDGET *psWidget, W_CONTEXT *psContext)
-{
-	W_LABEL				*Label = (W_LABEL *)psWidget;
-	BASE_OBJECT			*psObj = (BASE_OBJECT *)Label->pUserData;
-
-	// Get the object associated with this widget.
-	if (psObj != nullptr && !isDead(psObj))
-	{
-		DROID	*psDroid = (DROID *)psObj;
-
-		ASSERT(psObj->type == OBJ_DROID, "Invalid droid pointer");
-		ASSERT(psDroid->droidType == DROID_COMMAND, "Droid is not a command droid");
-
-		int numStars = std::max((int)getDroidLevel(psDroid) - 1, 0);
-		Label->setString(WzString(numStars, WzUniCodepoint::fromASCII('*')));
-		Label->show();
-	}
-	else
-	{
-		Label->setString("");
-		Label->hide();
-	}
-}
-
-// callback to update the command droid factories
-void intUpdateCommandFact(WIDGET *psWidget, W_CONTEXT *psContext)
-{
-	W_LABEL				*Label = (W_LABEL *)psWidget;
-	BASE_OBJECT			*psObj = (BASE_OBJECT *)Label->pUserData;
-	SDWORD                          i, start;
-
-	// Get the object associated with this widget.
-	if (psObj != nullptr && !isDead(psObj))
-	{
-		DROID		*psDroid = (DROID *)psObj;
-
-		ASSERT(psObj->type == OBJ_DROID, "Invalid droid pointer");
-		ASSERT(psDroid->droidType == DROID_COMMAND, "Droid is not a command droid");
-
-		// see which type of factory this is for
-		if (Label->id >= IDOBJ_COUNTSTART && Label->id < IDOBJ_COUNTEND)
-		{
-			start = DSS_ASSPROD_SHIFT;
-		}
-		else if (Label->id >= IDOBJ_CMDFACSTART && Label->id < IDOBJ_CMDFACEND)
-		{
-			start = DSS_ASSPROD_CYBORG_SHIFT;
-		}
-		else
-		{
-			start = DSS_ASSPROD_VTOL_SHIFT;
-		}
-
-		Label->setString("");
-		for (i = 0; i < 5; ++i)  // TODO Support up to MAX_FACTORY (which won't fit in the ugly secondaryOrder bitmask hack).
-		{
-			if (psDroid->secondaryOrder & (1 << (i + start)))
-			{
-				Label->setString(Label->getString().append(WzUniCodepoint::fromASCII((char)('0' + i + 1))));
-			}
-		}
-		Label->show();
-	}
-	else
-	{
-		Label->setString("");
-		Label->hide();
-	}
 }
 
 // Widget callback to update and display the power bar.
@@ -572,6 +184,7 @@ void intDisplayPowerBar(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 	ManPow = ManuPower / POWERBAR_SCALE;
 	Avail = (displayPower + 1e-8) / POWERBAR_SCALE;
 	realPower = (displayPower + 1e-8) - ManuPower;
+	ManuPower = 0;
 
 	BarWidth = BarGraph->width();
 	sprintf(szVal, "%d", realPower);
@@ -709,13 +322,42 @@ IntFancyButton::IntFancyButton()
 
 void IntFancyButton::initDisplay()
 {
-	model.rate += realTimeAdjustedAverage(isHighlighted() ? 2 * BUTTONOBJ_ROTSPEED : -4 * BUTTONOBJ_ROTSPEED);
-	model.rate = clip(model.rate, 0, BUTTONOBJ_ROTSPEED);
-	model.rotation.y += realTimeAdjustedAverage(model.rate);
-}
-
-void IntFancyButton::doneDisplay()
-{
+	if (isHighlighted())
+	{
+		model.rate += realTimeAdjustedAverage(isHighlighted() ? 2 * BUTTONOBJ_ROTSPEED : -4 * BUTTONOBJ_ROTSPEED);
+		model.rate = clip(model.rate, 0, BUTTONOBJ_ROTSPEED);
+		model.rotation.y += realTimeAdjustedAverage(model.rate);
+		model.rotation.y = model.rotation.y % 360;
+	}
+	else if (model.rotation.y != DEFAULT_BUTTON_ROTATION)
+	{
+		// return to default rotation using the nearest direction
+		if (model.rotation.y > (180 + DEFAULT_BUTTON_ROTATION))
+		{
+			model.rate += realTimeAdjustedAverage(5 * BUTTONOBJ_ROTSPEED);
+			model.rate = clip(model.rate, 0, 5 * BUTTONOBJ_ROTSPEED);
+			model.rotation.y += realTimeAdjustedAverage(model.rate);
+			if (model.rotation.y > 360)
+			{
+				model.rotation.y = model.rotation.y % 360;
+				model.rotation.y = std::min(model.rotation.y, DEFAULT_BUTTON_ROTATION);
+			}
+		}
+		else if (model.rotation.y < DEFAULT_BUTTON_ROTATION)
+		{
+			model.rate += realTimeAdjustedAverage(5 * BUTTONOBJ_ROTSPEED);
+			model.rate = clip(model.rate, 0, 5 * BUTTONOBJ_ROTSPEED);
+			model.rotation.y += realTimeAdjustedAverage(model.rate);
+			model.rotation.y = std::min(model.rotation.y, DEFAULT_BUTTON_ROTATION);
+		}
+		else
+		{
+			model.rate -= realTimeAdjustedAverage(7 * BUTTONOBJ_ROTSPEED);
+			model.rate = clip(model.rate, -5 * BUTTONOBJ_ROTSPEED, BUTTONOBJ_ROTSPEED);
+			model.rotation.y += realTimeAdjustedAverage(model.rate);
+			model.rotation.y = std::max(model.rotation.y, DEFAULT_BUTTON_ROTATION);
+		}
+	}
 }
 
 void IntFancyButton::displayIfHighlight(int xOffset, int yOffset)
@@ -915,8 +557,6 @@ void IntObjectButton::display(int xOffset, int yOffset)
 
 	displayIMD(Image(), object, xOffset, yOffset);
 	displayIfHighlight(xOffset, yOffset);
-
-	doneDisplay();
 }
 
 IntStatsButton::IntStatsButton()
@@ -1004,8 +644,6 @@ void IntStatsButton::display(int xOffset, int yOffset)
 
 	displayIMD(image, object, xOffset, yOffset);
 	displayIfHighlight(xOffset, yOffset);
-
-	doneDisplay();
 }
 
 IntFormTransparent::IntFormTransparent()
@@ -1632,8 +1270,7 @@ void IntFancyButton::displayBlank(int xOffset, int yOffset)
 //
 bool DroidIsBuilding(DROID *Droid)
 {
-	BASE_STATS	*Stats;
-	UDWORD x, y;
+	STRUCTURE_STATS	*Stats;
 
 	if (!(droidType(Droid) == DROID_CONSTRUCT ||
 	      droidType(Droid) == DROID_CYBORG_CONSTRUCT))
@@ -1641,7 +1278,7 @@ bool DroidIsBuilding(DROID *Droid)
 		return false;
 	}
 
-	if (orderStateStatsLoc(Droid, DORDER_BUILD, &Stats, &x, &y))
+	if (orderStateStatsLoc(Droid, DORDER_BUILD, &Stats))
 	{
 		// Moving to build location?
 		return false;
@@ -1660,8 +1297,7 @@ bool DroidIsBuilding(DROID *Droid)
 //
 bool DroidGoingToBuild(DROID *Droid)
 {
-	BASE_STATS	*Stats;
-	UDWORD x, y;
+	STRUCTURE_STATS	*Stats;
 
 	if (!(droidType(Droid) == DROID_CONSTRUCT ||
 	      droidType(Droid) == DROID_CYBORG_CONSTRUCT))
@@ -1669,7 +1305,7 @@ bool DroidGoingToBuild(DROID *Droid)
 		return false;
 	}
 
-	if (orderStateStatsLoc(Droid, DORDER_BUILD, &Stats, &x, &y))  	// Moving to build location?
+	if (orderStateStatsLoc(Droid, DORDER_BUILD, &Stats)) // Moving to build location?
 	{
 		return true;
 	}
@@ -1693,7 +1329,7 @@ STRUCTURE *DroidGetBuildStructure(DROID *Droid)
 }
 
 // Get the first factory assigned to a command droid
-static STRUCTURE *droidGetCommandFactory(DROID *psDroid)
+STRUCTURE *droidGetCommandFactory(DROID *psDroid)
 {
 	SDWORD		inc;
 	STRUCTURE	*psCurr;
@@ -1748,10 +1384,9 @@ static STRUCTURE *droidGetCommandFactory(DROID *psDroid)
 //
 BASE_STATS *DroidGetBuildStats(DROID *Droid)
 {
-	BASE_STATS *Stats;
-	UDWORD x, y;
+	STRUCTURE_STATS *Stats;
 
-	if (orderStateStatsLoc(Droid, DORDER_BUILD, &Stats, &x, &y))  	// Moving to build location?
+	if (orderStateStatsLoc(Droid, DORDER_BUILD, &Stats))  	// Moving to build location?
 	{
 		return Stats;
 	}
@@ -2082,7 +1717,6 @@ void IntTransportButton::display(int xOffset, int yOffset)
 			iV_DrawImage(IntImages, gfxId, xOffset + x() + 50, yOffset + y() + 10);
 		}
 	}
-	doneDisplay();
 }
 
 /* Draws blips on radar to represent Proximity Display and damaged structures */
@@ -2323,48 +1957,8 @@ void intUpdateQuantitySlider(WIDGET *psWidget, W_CONTEXT *psContext)
 	}
 }
 
-void intDisplayResSubGroup(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
+void intDisplayUpdateAllyBar(W_BARGRAPH *psBar, const RESEARCH &research, const std::vector<AllyResearch> &researches)
 {
-	W_LABEL		*Label = (W_LABEL *)psWidget;
-	UDWORD		x = Label->x() + xOffset;
-	UDWORD		y = Label->y() + yOffset;
-	RESEARCH    *psResearch = (RESEARCH *)Label->pUserData;
-
-	if (psResearch->subGroup != NO_RESEARCH_ICON)
-	{
-		iV_DrawImage(IntImages, psResearch->subGroup, x, y);
-	}
-}
-
-void intDisplayAllyIcon(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
-{
-	W_LABEL		*Label = (W_LABEL *)psWidget;
-	UDWORD		x = Label->x() + xOffset;
-	UDWORD		y = Label->y() + yOffset;
-
-	unsigned ref = UNPACKDWORD_HI(psWidget->UserData) + STAT_RESEARCH;
-	unsigned num = UNPACKDWORD_LOW(psWidget->UserData);
-
-	std::vector<AllyResearch> const &researches = listAllyResearch(ref);
-	if (num >= researches.size())
-	{
-		return;  // No icon to display. (Shouldn't really get here...)
-	}
-
-	if (!researches[num].active && realTime % 500 >= 250)
-	{
-		return;  // If inactive, blink the icon. (Alternatively, we could use a different icon instead.)
-	}
-	iV_DrawImageTc(IntImages, IMAGE_ALLY_RESEARCH, IMAGE_ALLY_RESEARCH_TC, x, y, pal_GetTeamColour(getPlayerColour(researches[num].player)));
-}
-
-void intDisplayAllyBar(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
-{
-	W_BARGRAPH *psBar = (W_BARGRAPH *)psWidget;
-
-	RESEARCH const &research = asResearch[psWidget->UserData];
-	std::vector<AllyResearch> const &researches = listAllyResearch(research.ref);
-
 	unsigned bestCompletion = 0;
 	const int researchNotStarted = 3600000;
 	int bestPowerNeeded = researchNotStarted;
@@ -2409,7 +2003,6 @@ void intDisplayAllyBar(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 		formatPowerText(psBar, bestPowerNeeded);
 		setBarGraphValue(psBar, psBar->majorCol, researchPowerCost - bestPowerNeeded, researchPowerCost);
 	}
-	barGraphDisplayTrough(psWidget, xOffset, yOffset);
 }
 
 /* Set the shadow power for the selected player */

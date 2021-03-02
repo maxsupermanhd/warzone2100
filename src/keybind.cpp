@@ -17,10 +17,9 @@
 	along with Warzone 2100; if not, write to the Free Software
 	Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
 */
-#include <string.h>
+#include <cstring>
 
 #include "lib/framework/frame.h"
-#include "lib/framework/stdio_ext.h"
 #include "lib/framework/wzapp.h"
 #include "lib/framework/rational.h"
 #include "objects.h"
@@ -31,7 +30,6 @@
 #include "warzoneconfig.h"
 #include "console.h"
 #include "display.h"
-#include "mapdisplay.h"
 #include "display3d.h"
 #include "edit3d.h"
 #include "keybind.h"
@@ -45,7 +43,6 @@
 #include "ingameop.h"
 #include "effects.h"
 #include "component.h"
-#include "geometry.h"
 #include "radar.h"
 #include "structure.h"
 // FIXME Direct iVis implementation include!
@@ -64,16 +61,12 @@
 #include "lib/ivis_opengl/piestate.h"
 // FIXME Direct iVis implementation include!
 #include "lib/framework/fixedpoint.h"
-#include "lib/ivis_opengl/piematrix.h"
 
 #include "keymap.h"
 #include "loop.h"
 #include "mission.h"
-#include "mapgrid.h"
-#include "order.h"
 #include "selection.h"
 #include "difficulty.h"
-#include "clparse.h"
 #include "research.h"
 #include "template.h"
 #include "qtscript.h"
@@ -322,7 +315,7 @@ void	kf_FaceNorth()
 // --------------------------------------------------------------------------
 void	kf_FaceSouth()
 {
-	player.r.y = DEG(180);
+	playerPos.r.y = DEG(180);
 	if (getWarCamStatus())
 	{
 		camToggleStatus();
@@ -332,7 +325,7 @@ void	kf_FaceSouth()
 // --------------------------------------------------------------------------
 void	kf_FaceEast()
 {
-	player.r.y = DEG(90);
+	playerPos.r.y = DEG(90);
 	if (getWarCamStatus())
 	{
 		camToggleStatus();
@@ -342,7 +335,7 @@ void	kf_FaceEast()
 // --------------------------------------------------------------------------
 void	kf_FaceWest()
 {
-	player.r.y = DEG(270);
+	playerPos.r.y = DEG(270);
 	if (getWarCamStatus())
 	{
 		camToggleStatus();
@@ -819,7 +812,7 @@ void	kf_ToggleCamera()
 
 void kf_RevealMapAtPos()
 {
-	addSpotter(mouseTileX, mouseTileY, selectedPlayer, 1024, 0, gameTime + 2000);
+	addSpotter(mouseTileX, mouseTileY, selectedPlayer, 1024, false, gameTime + 2000);
 }
 
 // --------------------------------------------------------------------------
@@ -962,7 +955,7 @@ void	kf_RotateLeft()
 {
 	float rotAmount = realTimeAdjustedIncrement(MAP_SPIN_RATE);
 
-	player.r.y += rotAmount;
+	playerPos.r.y += rotAmount;
 }
 
 // --------------------------------------------------------------------------
@@ -971,10 +964,10 @@ void	kf_RotateRight()
 {
 	float rotAmount = realTimeAdjustedIncrement(MAP_SPIN_RATE);
 
-	player.r.y -= rotAmount;
-	if (player.r.y < 0)
+	playerPos.r.y -= rotAmount;
+	if (playerPos.r.y < 0)
 	{
-		player.r.y += DEG(360);
+		playerPos.r.y += DEG(360);
 	}
 }
 
@@ -998,11 +991,11 @@ void	kf_PitchBack()
 {
 	float pitchAmount = realTimeAdjustedIncrement(MAP_PITCH_RATE);
 
-	player.r.x += pitchAmount;
+	playerPos.r.x += pitchAmount;
 
-	if (player.r.x > DEG(360 + MAX_PLAYER_X_ANGLE))
+	if (playerPos.r.x > DEG(360 + MAX_PLAYER_X_ANGLE))
 	{
-		player.r.x = DEG(360 + MAX_PLAYER_X_ANGLE);
+		playerPos.r.x = DEG(360 + MAX_PLAYER_X_ANGLE);
 	}
 }
 
@@ -1012,10 +1005,10 @@ void	kf_PitchForward()
 {
 	float pitchAmount = realTimeAdjustedIncrement(MAP_PITCH_RATE);
 
-	player.r.x -= pitchAmount;
-	if (player.r.x < DEG(360 + MIN_PLAYER_X_ANGLE))
+	playerPos.r.x -= pitchAmount;
+	if (playerPos.r.x < DEG(360 + MIN_PLAYER_X_ANGLE))
 	{
-		player.r.x = DEG(360 + MIN_PLAYER_X_ANGLE);
+		playerPos.r.x = DEG(360 + MIN_PLAYER_X_ANGLE);
 	}
 }
 
@@ -1023,7 +1016,7 @@ void	kf_PitchForward()
 /* Resets pitch to default */
 void	kf_ResetPitch()
 {
-	player.r.x = DEG(360 - 20);
+	playerPos.r.x = DEG(360 - 20);
 	setViewDistance(STARTDISTANCE);
 }
 
@@ -1192,9 +1185,9 @@ void	kf_JumpToMapMarker()
 	{
 		entry = getLastSubKey();
 //		CONPRINTF("Restoring map position %d:%d",getMarkerX(entry),getMarkerY(entry));
-		player.p.x = getMarkerX(entry);
-		player.p.z = getMarkerY(entry);
-		player.r.y = getMarkerSpin(entry);
+		playerPos.p.x = getMarkerX(entry);
+		playerPos.p.z = getMarkerY(entry);
+		playerPos.r.y = getMarkerSpin(entry);
 		/* A fix to stop the camera continuing when marker code is called */
 		if (getWarCamStatus())
 		{
@@ -1244,11 +1237,11 @@ void	kf_ToggleGodMode()
 		}
 
 		// and the structures
-		for (unsigned player = 0; player < MAX_PLAYERS; ++player)
+		for (unsigned playerId = 0; playerId < MAX_PLAYERS; ++playerId)
 		{
-			if (player != selectedPlayer)
+			if (playerId != selectedPlayer)
 			{
-				STRUCTURE *psStruct = apsStructLists[player];
+				STRUCTURE *psStruct = apsStructLists[playerId];
 
 				while (psStruct)
 				{
@@ -1278,7 +1271,7 @@ void	kf_ToggleGodMode()
 /* Aligns the view to north - some people can't handle the world spinning */
 void	kf_SeekNorth()
 {
-	player.r.y = 0;
+	playerPos.r.y = 0;
 	if (getWarCamStatus())
 	{
 		camToggleStatus();
@@ -1322,13 +1315,14 @@ void	kf_TogglePauseMode()
 	}
 
 	/* Is the game running? */
-	if (gamePaused() == false)
+	if (!gamePaused())
 	{
 		/* Then pause it */
 		setGamePauseStatus(true);
 		setConsolePause(true);
 		setScriptPause(true);
 		setAudioPause(true);
+		setScrollPause(true);
 
 		// If cursor trapping is enabled allow the cursor to leave the window
 		if (war_GetTrapCursor())
@@ -1405,6 +1399,7 @@ void	kf_TogglePauseMode()
 		setConsolePause(false);
 		setScriptPause(false);
 		setAudioPause(false);
+		setScrollPause(false);
 
 		// Re-enable cursor trapping if it is enabled
 		if (war_GetTrapCursor())
@@ -1434,7 +1429,7 @@ void	kf_FinishAllResearch()
 
 	for (j = 0; j < asResearch.size(); j++)
 	{
-		if (IsResearchCompleted(&asPlayerResList[selectedPlayer][j]) == false)
+		if (!IsResearchCompleted(&asPlayerResList[selectedPlayer][j]))
 		{
 			if (bMultiMessages)
 			{
@@ -1497,7 +1492,7 @@ void	kf_FinishResearch()
 	{
 		if (psCurr->pStructureType->type == REF_RESEARCH)
 		{
-			BASE_STATS	*pSubject = nullptr;
+			BASE_STATS	*pSubject;
 
 			// find out what we are researching here
 			pSubject = ((RESEARCH_FACILITY *)psCurr->pFunctionality)->psSubject;
@@ -1575,7 +1570,7 @@ void	kf_JumpToResourceExtractor()
 
 	if (psOldRE)
 	{
-		player.r.y = 0; // face north
+		playerPos.r.y = 0; // face north
 		setViewPos(map_coord(psOldRE->pos.x), map_coord(psOldRE->pos.y), true);
 	}
 	else
@@ -1951,7 +1946,6 @@ void	kf_JumpNextVTOLFactory()
 
 void	kf_KillEnemy()
 {
-	UDWORD		player;
 	DROID		*psCDroid, *psNDroid;
 	STRUCTURE	*psCStruct, *psNStruct;
 
@@ -1971,18 +1965,18 @@ void	kf_KillEnemy()
 	sendInGameSystemMessage(cmsg.c_str());
 	Cheated = true;
 
-	for (player = 0; player < MAX_PLAYERS; player++)
+	for (int playerId = 0; playerId < MAX_PLAYERS; playerId++)
 	{
-		if (player != selectedPlayer)
+		if (playerId != selectedPlayer)
 		{
 			// wipe out all the droids
-			for (psCDroid = apsDroidLists[player]; psCDroid; psCDroid = psNDroid)
+			for (psCDroid = apsDroidLists[playerId]; psCDroid; psCDroid = psNDroid)
 			{
 				psNDroid = psCDroid->psNext;
 				SendDestroyDroid(psCDroid);
 			}
 			// wipe out all their structures
-			for (psCStruct = apsStructLists[player]; psCStruct; psCStruct = psNStruct)
+			for (psCStruct = apsStructLists[playerId]; psCStruct; psCStruct = psNStruct)
 			{
 				psNStruct = psCStruct->psNext;
 				SendDestroyStructure(psCStruct);
@@ -2456,9 +2450,9 @@ void	kf_CentreOnBase()
 	if (bGotHQ)
 	{
 		addConsoleMessage(_("Centered on player HQ, direction NORTH"), LEFT_JUSTIFY, SYSTEM_MESSAGE);
-		player.p.x = xJump;
-		player.p.z = yJump;
-		player.r.y = 0; // face north
+		playerPos.p.x = xJump;
+		playerPos.p.z = yJump;
+		playerPos.r.y = 0; // face north
 		/* A fix to stop the camera continuing when marker code is called */
 		if (getWarCamStatus())
 		{
@@ -2728,7 +2722,6 @@ void kf_ToggleRadarTerrain()
 		break;
 	case NUM_RADAR_MODES:
 		assert(false);
-		break;
 	}
 }
 
@@ -2788,7 +2781,7 @@ void kf_NoAssert()
 	debug(LOG_ERROR, "Asserts turned off");
 }
 
-// rotuine to decrement the tab-scroll 'buttons'
+// routine to decrement the tab-scroll 'buttons'
 void kf_BuildPrevPage()
 {
 	ASSERT_OR_RETURN(, psWScreen != nullptr, " Invalid screen pointer!");
@@ -2807,7 +2800,7 @@ void kf_BuildPrevPage()
 	audio_PlayTrack(ID_SOUND_BUTTON_CLICK_5);
 }
 
-// rotuine to advance the tab-scroll 'buttons'
+// routine to advance the tab-scroll 'buttons'
 void kf_BuildNextPage()
 {
 	ASSERT_OR_RETURN(, psWScreen != nullptr, " Invalid screen pointer!");

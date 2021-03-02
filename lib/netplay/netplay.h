@@ -27,6 +27,7 @@
 #define _netplay_h
 
 #include "lib/framework/crc.h"
+#include "src/factionid.h"
 #include "nettypes.h"
 #include <physfs.h>
 #include <vector>
@@ -70,6 +71,7 @@ enum MESSAGE_TYPES
 	NET_KICK,                       ///< kick a player .
 	NET_FIREUP,                     ///< campaign game has started, we can go too.. Shortcut message, not to be used in dmatch.
 	NET_COLOURREQUEST,              ///< player requests a colour change.
+	NET_FACTIONREQUEST,             ///< player requests a colour change.
 	NET_AITEXTMSG,                  ///< chat between AIs
 	NET_BEACONMSG,                  ///< place beacon
 	NET_TEAMREQUEST,                ///< request team membership
@@ -127,14 +129,13 @@ enum MESSAGE_TYPES
 #define WZ_SERVER_DISCONNECT 0
 #define WZ_SERVER_CONNECT    1
 #define WZ_SERVER_UPDATE     3
-#define WZ_SERVER_KEEPALIVE  4
 
 // Constants
 // @NOTE / FIXME: We need a way to detect what should happen if the msg buffer exceeds this.
 #define MaxMsgSize		16384		// max size of a message in bytes.
 #define	StringSize		64			// size of strings used.
 #define MaxGames		11			// max number of concurrently playable games to allow.
-#define extra_string_size	159		// extra 199 char for future use
+#define extra_string_size	157		// extra 199 char for future use
 #define map_string_size		40
 #define	hostname_string_size	40
 #define modlist_string_size	255		// For a concatenated list of mods
@@ -172,6 +173,7 @@ struct GAMESTRUCT
 	// NOTE: do NOT save the following items in game.c--it will break savegames.
 	char		secondaryHosts[2][40];
 	char		extra[extra_string_size];		// extra string (future use)
+	uint16_t	hostPort;						// server port
 	char		mapname[map_string_size];		// map server is hosting
 	char		hostname[hostname_string_size];	// ...
 	char		versionstring[StringSize];		//
@@ -257,6 +259,7 @@ struct PLAYER
 	bool                autoGame;           ///< if we are running a autogame (AI controls us)
 	std::vector<WZFile> wzFiles;            ///< for each player, we keep track of map/mod download progress
 	char                IPtextAddress[40];  ///< IP of this player
+	FactionID			faction;			///< which faction the player has
 
 	void resetAll()
 	{
@@ -274,6 +277,7 @@ struct PLAYER
 		difficulty = AIDifficulty::DISABLED;
 		autoGame = false;
 		IPtextAddress[0] = '\0';
+		faction = FACTION_NORMAL;
 	}
 };
 
@@ -298,7 +302,7 @@ struct NETPLAY
 	bool ShowedMOTD;					// only want to show this once
 	bool HaveUpgrade;					// game updates available
 	char MOTDbuffer[255];				// buffer for MOTD
-	char *MOTD;
+	char *MOTD = nullptr;
 
 	std::vector<std::shared_ptr<PlayerReference>> playerReferences;
 

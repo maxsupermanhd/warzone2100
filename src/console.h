@@ -53,7 +53,7 @@ struct ConsoleMessage
 	UDWORD duration;
 };
 
-const DEBOUNCED_MESSAGE CANNOT_BUILD_BURNING({2500});
+const DEBOUNCED_MESSAGE CANNOT_BUILD_BURNING = {2500};
 
 
 /* ID to use for addConsoleMessage() in case of a system message */
@@ -91,8 +91,8 @@ void setHistoryMode(bool mode);
 void clearInfoMessages();
 
 typedef std::function<void(ConsoleMessage const &)> CONSOLE_MESSAGE_LISTENER;
-void consoleAddMessageListener(std::shared_ptr<CONSOLE_MESSAGE_LISTENER> listener);
-void consoleRemoveMessageListener(std::shared_ptr<CONSOLE_MESSAGE_LISTENER> listener);
+void consoleAddMessageListener(const std::shared_ptr<CONSOLE_MESSAGE_LISTENER>& listener);
+void consoleRemoveMessageListener(const std::shared_ptr<CONSOLE_MESSAGE_LISTENER>& listener);
 
 #if defined(DEBUG)
 # define debug_console(...) \

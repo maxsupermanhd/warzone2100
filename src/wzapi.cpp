@@ -24,7 +24,9 @@
 
 #include "lib/framework/wzapp.h"
 #include "lib/framework/wzconfig.h"
+#include "lib/framework/wzpaths.h"
 #include "lib/framework/fixedpoint.h"
+#include "lib/framework/file.h"
 #include "lib/sound/audio.h"
 #include "lib/sound/cdaudio.h"
 #include "lib/netplay/netplay.h"
@@ -108,12 +110,77 @@ BASE_OBJECT *IdToObject(OBJECT_TYPE type, int id, int player)
 	}
 }
 
-wzapi::scripting_instance::scripting_instance(int player, const std::string& scriptName)
+wzapi::scripting_instance::scripting_instance(int player, const std::string& scriptName, const std::string& scriptPath)
 : m_player(player)
 , m_scriptName(scriptName)
+, m_scriptPath(scriptPath)
 { }
 wzapi::scripting_instance::~scripting_instance()
 { }
+
+// Loads a file.
+// (Intended for use from implementations of things like "include" functions.)
+//
+// Lookup order is as follows (based on the value of `searchFlags`):
+// - 1.) The filePath is checked relative to the read-only data dir search paths (LoadFileSearchOptions::DataDir)
+// - 2.) The filePath is checked relative to "<user's config dir>/script/" (LoadFileSearchOptions::ConfigScriptDir)
+// - 3.) The filename *only* is checked relative to the main scriptPath (LoadFileSearchOptions::ScriptPath_FileNameOnlyBackwardsCompat) - for backwards-compat only
+// - 4.) The filePath is checked relative to the main scriptPath (LoadFileSearchOptions::ScriptPath)
+bool wzapi::scripting_instance::loadFileForInclude(const std::string& filePath, std::string& loadedFilePath, char **ppFileData, UDWORD *pFileSize, uint32_t searchFlags /*= LoadFileSearchOptions::All*/)
+{
+	WzPathInfo filePathInfo = WzPathInfo::fromPlatformIndependentPath(filePath);
+	std::string path;
+
+	if (path.empty() && (searchFlags & LoadFileSearchOptions::DataDir))
+	{
+		if (PHYSFS_exists(filePathInfo.filePath().c_str()))
+		{
+			path = filePathInfo.filePath(); // use this path instead (from read-only data dir)
+		}
+	}
+	if (path.empty() && (searchFlags & LoadFileSearchOptions::ConfigScriptDir))
+	{
+		if (PHYSFS_exists((std::string("scripts/") + filePathInfo.filePath()).c_str()))
+		{
+			path = "scripts/" + filePathInfo.filePath(); // use this path instead (in user write dir)
+		}
+	}
+	if (path.empty() && (searchFlags & LoadFileSearchOptions::ScriptPath_FileNameOnlyBackwardsCompat))
+	{
+		// to provide backwards-compat, start by checking the scriptPath for the passed-in filename *only*
+		path = scriptPath() + "/" + filePathInfo.fileName();
+		if (!PHYSFS_exists(path.c_str()))
+		{
+			path.clear();
+		}
+	}
+	if (path.empty() && (searchFlags & LoadFileSearchOptions::ScriptPath))
+	{
+		path = scriptPath() + "/" + filePathInfo.filePath();
+		if (!PHYSFS_exists(path.c_str()))
+		{
+			path.clear();
+		}
+	}
+	if (path.empty())
+	{
+		debug(LOG_ERROR, "Failed to find file: %s", filePath.c_str());
+		*ppFileData = nullptr;
+		*pFileSize = 0;
+		return false;
+	}
+	if (!::loadFile(path.c_str(), ppFileData, pFileSize))
+	{
+		debug(LOG_ERROR, "Failed to read file \"%s\" (name=\"%s\")", path.c_str(), filePathInfo.filePath().c_str());
+		*ppFileData = nullptr;
+		*pFileSize = 0;
+		return false;
+	}
+
+	loadedFilePath = path;
+	return true;
+}
+
 std::unordered_map<std::string, wzapi::scripting_instance::DebugSpecialStringType> wzapi::scripting_instance::debugGetScriptGlobalSpecialStringValues()
 {
 	return {};
@@ -2537,21 +2604,21 @@ wzapi::no_return_value wzapi::setTutorialMode(WZAPI_PARAMS(bool tutorialMode))
 //--
 //-- Whether to allow player to design stuff.
 //--
-wzapi::no_return_value wzapi::setDesign(WZAPI_PARAMS(bool allowDesign))
+wzapi::no_return_value wzapi::setDesign(WZAPI_PARAMS(bool allowDesignValue))
 {
 	DROID_TEMPLATE *psCurr;
 	// Switch on or off future templates
 	// FIXME: This dual data structure for templates is just plain insane.
-	enumerateTemplates(selectedPlayer, [allowDesign](DROID_TEMPLATE * psTempl) {
+	enumerateTemplates(selectedPlayer, [allowDesignValue](DROID_TEMPLATE * psTempl) {
 		bool researched = researchedTemplate(psTempl, selectedPlayer, true);
-		psTempl->enabled = (researched || allowDesign);
+		psTempl->enabled = (researched || allowDesignValue);
 		return true;
 	});
 	for (auto &localTemplate : localTemplates)
 	{
 		psCurr = &localTemplate;
 		bool researched = researchedTemplate(psCurr, selectedPlayer, true);
-		psCurr->enabled = (researched || allowDesign);
+		psCurr->enabled = (researched || allowDesignValue);
 	}
 	return {};
 }
@@ -4183,6 +4250,16 @@ nlohmann::json wzapi::constructStatsObject()
 			weap["ImpactClass"] = getWeaponSubClass(psStats->weaponSubClass);
 			weap["RepeatClass"] = getWeaponSubClass(psStats->periodicalDamageWeaponSubClass);
 			weap["FireOnMove"] = psStats->fireOnMove;
+			weap["Effect"] = getWeaponEffect(psStats->weaponEffect);
+			weap["ShootInAir"] = static_cast<bool>((psStats->surfaceToAir & SHOOT_IN_AIR) != 0);
+			weap["ShootOnGround"] = static_cast<bool>((psStats->surfaceToAir & SHOOT_ON_GROUND) != 0);
+			weap["NoFriendlyFire"] = psStats->flags.test(WEAPON_FLAG_NO_FRIENDLY_FIRE);
+			weap["FlightSpeed"] = psStats->flightSpeed;
+			weap["Rotate"] = psStats->rotate;
+			weap["MinElevation"] = psStats->minElevation;
+			weap["MaxElevation"] = psStats->maxElevation;
+			weap["Recoil"] = psStats->recoilValue;
+			weap["Penetrate"] = psStats->penetrate;
 			wbase[psStats->name.toUtf8()] = std::move(weap);
 		}
 		stats["Weapon"] = std::move(wbase);
@@ -4353,6 +4430,7 @@ nlohmann::json wzapi::constructStaticPlayerData()
 		nlohmann::json vector = nlohmann::json::object();
 		vector["name"] = NetPlay.players[i].name;
 		vector["difficulty"] = static_cast<int8_t>(NetPlay.players[i].difficulty);
+		vector["faction"] = NetPlay.players[i].faction;
 		vector["colour"] = NetPlay.players[i].colour;
 		vector["position"] = NetPlay.players[i].position;
 		vector["team"] = NetPlay.players[i].team;

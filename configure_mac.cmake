@@ -3,6 +3,7 @@ cmake_minimum_required(VERSION 3.5)
 # Optional input defines:
 #  - VCPKG_BUILD_TYPE : This will be used to modify the current triplet (once vcpkg is downloaded)
 #  - WZ_DISTRIBUTOR : Passed to the main WZ CMake configure command
+#  - ADDITIONAL_VCPKG_FLAGS : Additional arguments to be passed to vcpkg
 #  - ADDITIONAL_CMAKE_ARGUMENTS : Additional arguments to be passed to CMake configure
 #  - ONLY_BUILD_VCPKG : Only proceed through the steps to build vcpkg
 #  - SKIP_VCPKG_BUILD : Skip building vcpkg itself, proceed with remaining steps
@@ -10,16 +11,16 @@ cmake_minimum_required(VERSION 3.5)
 ########################################################
 
 # To ensure reproducible builds, pin to a specific vcpkg commit
-set(VCPKG_COMMIT_SHA "d1ef42c0fd7b9d5ac90be74df62b12e1184d02a1")
+set(VCPKG_COMMIT_SHA "e25b620cf90d9bb311f91b03916b75d8798afd44")
 
 # WZ minimum supported macOS deployment target (this is 10.10 because of Qt 5.9.x)
 set(MIN_SUPPORTED_MACOSX_DEPLOYMENT_TARGET "10.10")
 
 # Vulkan SDK
-set(VULKAN_SDK_VERSION "1.2.162.0")
+set(VULKAN_SDK_VERSION "1.2.162.1")
 set(VULKAN_SDK_DL_FILENAME "vulkansdk-macos-${VULKAN_SDK_VERSION}.dmg")
 set(VULKAN_SDK_DL_URL "https://sdk.lunarg.com/sdk/download/${VULKAN_SDK_VERSION}/mac/${VULKAN_SDK_DL_FILENAME}?Human=true")
-set(VULKAN_SDK_DL_SHA256 "d5d25d801eb83130db1e41fa6c09f125ba57e7503ae81553182ba7196f32a0a3")
+set(VULKAN_SDK_DL_SHA256 "2781c334997598c2828d8a3368aef7b7c94a25204c90d5503396e40c7a03fd5c")
 
 ########################################################
 
@@ -231,12 +232,18 @@ if(DEFINED VCPKG_BUILD_TYPE)
 		message(STATUS "Using VCPKG_DEFAULT_TRIPLET=$ENV{VCPKG_DEFAULT_TRIPLET}")
 		set(triplet "$ENV{VCPKG_DEFAULT_TRIPLET}")
 	endif()
-	set(tripletFile "triplets/${triplet}.cmake")
+	set(tripletFile "vcpkg/triplets/${triplet}.cmake")
+	if (NOT EXISTS "${tripletFile}")
+		set(tripletFile "vcpkg/triplets/community/${triplet}.cmake")
+		if (NOT EXISTS "${tripletFile}")
+			message(FATAL_ERROR "Unable to find VCPKG_DEFAULT_TRIPLET: ${VCPKG_DEFAULT_TRIPLET}")
+		endif()
+	endif()
 	set(tripletCommand "set(VCPKG_BUILD_TYPE \"${VCPKG_BUILD_TYPE}\")")
-	file(READ "vcpkg/${tripletFile}" _strings_tripletFile ENCODING UTF-8)
+	file(READ "${tripletFile}" _strings_tripletFile ENCODING UTF-8)
 	string(FIND "${_strings_tripletFile}" "${tripletCommand}" _tripletCommandPos)
 	if(_tripletCommandPos EQUAL -1)
-		file(APPEND "vcpkg/${tripletFile}" "\n${tripletCommand}\n")
+		file(APPEND "${tripletFile}" "\n${tripletCommand}\n")
 	else()
 		message(STATUS "Already modified triplet (${triplet}) to use VCPKG_BUILD_TYPE: \"${VCPKG_BUILD_TYPE}\"")
 	endif()
@@ -262,9 +269,9 @@ execute_process(COMMAND ${CMAKE_COMMAND} -E echo "++ vcpkg install dependencies.
 
 set(_additional_vcpkg_flags)
 if(_HAS_VULKAN_SDK)
-	set(_additional_vcpkg_flags --x-no-default-features --x-feature=vulkan)
+	set(_additional_vcpkg_flags ${ADDITIONAL_VCPKG_FLAGS} --x-no-default-features --x-feature=vulkan)
 else()
-	set(_additional_vcpkg_flags --x-no-default-features)
+	set(_additional_vcpkg_flags ${ADDITIONAL_VCPKG_FLAGS} --x-no-default-features)
 endif()
 
 set(_vcpkgInstallResult -1)

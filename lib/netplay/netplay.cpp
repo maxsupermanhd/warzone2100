@@ -143,6 +143,46 @@ struct NET_PLAYER_DATA
 	size_t          buffer_size;
 };
 
+#define SERVER_UPDATE_MIN_INTERVAL 7 * GAME_TICKS_PER_SEC
+#define SERVER_UPDATE_MAX_INTERVAL 25 * GAME_TICKS_PER_SEC
+
+class LobbyServerConnectionHandler
+{
+public:
+	bool connect();
+	bool disconnect();
+	void sendUpdate();
+	void run();
+private:
+	void sendUpdateNow();
+	void sendKeepAlive();
+
+	inline bool canSendServerUpdateNow()
+	{
+		return (currentState == LobbyConnectionState::Connected)
+			&& (realTime - lastServerUpdate >= SERVER_UPDATE_MIN_INTERVAL);
+	}
+
+	inline bool shouldSendServerKeepAliveNow()
+	{
+		return (currentState == LobbyConnectionState::Connected)
+			&& (realTime - lastServerUpdate >= SERVER_UPDATE_MAX_INTERVAL);
+	}
+private:
+	enum class LobbyConnectionState
+	{
+		Disconnected,
+		Connecting_WaitingForResponse,
+		Connected
+	};
+	LobbyConnectionState currentState = LobbyConnectionState::Disconnected;
+	Socket *rs_socket = nullptr;
+	SocketSet* waitingForConnectionFinalize = nullptr;
+	uint32_t lastConnectionTime = 0;
+	uint32_t lastServerUpdate = 0;
+	bool queuedServerUpdate = false;
+};
+
 // ////////////////////////////////////////////////////////////////////////
 // Variables
 
@@ -193,6 +233,8 @@ static const NETSTATS nZeroStats    = {{0, 0}, {0, 0}, {0, 0}};
 static int nStatsLastUpdateTime = 0;
 
 unsigned NET_PlayerConnectionStatus[CONNECTIONSTATUS_NORMAL][MAX_PLAYERS];
+
+static LobbyServerConnectionHandler lobbyConnectionHandler;
 
 // ////////////////////////////////////////////////////////////////////////////
 /************************************************************************************
@@ -295,7 +337,7 @@ void NETresetGamePassword()
 
 // *********** Socket with buffer that read NETMSGs ******************
 
-static size_t NET_fillBuffer(Socket **pSocket, SocketSet *socket_set, uint8_t *bufstart, int bufsize)
+static size_t NET_fillBuffer(Socket **pSocket, SocketSet *pSocketSet, uint8_t *bufstart, int bufsize)
 {
 	Socket *socket = *pSocket;
 	ssize_t size;
@@ -329,9 +371,9 @@ static size_t NET_fillBuffer(Socket **pSocket, SocketSet *socket_set, uint8_t *b
 		}
 
 		// an error occurred, or the remote host has closed the connection.
-		if (socket_set != nullptr)
+		if (pSocketSet != nullptr)
 		{
-			SocketSet_DelSocket(socket_set, socket);
+			SocketSet_DelSocket(pSocketSet, socket);
 		}
 
 		ASSERT(size <= bufsize, "Socket buffer is too small!");
@@ -416,6 +458,7 @@ void NET_InitPlayer(int i, bool initPosition, bool initTeams)
 	{
 		NetPlay.players[i].ai = 0;
 	}
+	NetPlay.players[i].faction = FACTION_NORMAL;
 }
 
 uint8_t NET_numHumanPlayers(void)
@@ -478,6 +521,7 @@ static void NETSendNPlayerInfoTo(uint32_t *index, uint32_t indexLen, unsigned to
 		NETbool(&NetPlay.players[index[n]].ready);
 		NETint8_t(&NetPlay.players[index[n]].ai);
 		NETint8_t(reinterpret_cast<int8_t*>(&NetPlay.players[index[n]].difficulty));
+		NETuint8_t(reinterpret_cast<uint8_t *>(&NetPlay.players[index[n]].faction));
 	}
 	NETend();
 	ActivityManager::instance().updateMultiplayGameData(game, ingame, NETGameIsLocked());
@@ -823,7 +867,7 @@ static bool NETsendGAMESTRUCT(Socket *sock, const GAMESTRUCT *ourgamestruct)
 	// to zero so that we can be sure we're not sending any (undefined)
 	// memory content across the network.
 	char buf[sizeof(ourgamestruct->GAMESTRUCT_VERSION) + sizeof(ourgamestruct->name) + sizeof(ourgamestruct->desc.host) + (sizeof(int32_t) * 8) +
-	         sizeof(ourgamestruct->secondaryHosts) + sizeof(ourgamestruct->extra) + sizeof(ourgamestruct->mapname) + sizeof(ourgamestruct->hostname) + sizeof(ourgamestruct->versionstring) +
+	         sizeof(ourgamestruct->secondaryHosts) + sizeof(ourgamestruct->extra) + sizeof(ourgamestruct->hostPort) + sizeof(ourgamestruct->mapname) + sizeof(ourgamestruct->hostname) + sizeof(ourgamestruct->versionstring) +
 	         sizeof(ourgamestruct->modlist) + (sizeof(uint32_t) * 9) ] = { 0 };
 	char *buffer = buf;
 	unsigned int i;
@@ -831,6 +875,12 @@ static bool NETsendGAMESTRUCT(Socket *sock, const GAMESTRUCT *ourgamestruct)
 
 	auto push32 = [&](uint32_t value) {
 		uint32_t swapped = htonl(value);
+		memcpy(buffer, &swapped, sizeof(swapped));
+		buffer += sizeof(swapped);
+	};
+
+	auto push16 = [&](uint16_t value) {
+		uint16_t swapped = htons(value);
 		memcpy(buffer, &swapped, sizeof(swapped));
 		buffer += sizeof(swapped);
 	};
@@ -869,6 +919,9 @@ static bool NETsendGAMESTRUCT(Socket *sock, const GAMESTRUCT *ourgamestruct)
 	// Copy a string
 	strlcpy(buffer, ourgamestruct->extra, sizeof(ourgamestruct->extra));
 	buffer += sizeof(ourgamestruct->extra);
+
+	// Copy 16bit large big endian number
+	push16(ourgamestruct->hostPort);
 
 	// Copy a string
 	strlcpy(buffer, ourgamestruct->mapname, sizeof(ourgamestruct->mapname));
@@ -944,7 +997,7 @@ static bool NETrecvGAMESTRUCT(Socket *sock, GAMESTRUCT *ourgamestruct)
 	// A buffer that's guaranteed to have the correct size (i.e. it
 	// circumvents struct padding, which could pose a problem).
 	char buf[sizeof(ourgamestruct->GAMESTRUCT_VERSION) + sizeof(ourgamestruct->name) + sizeof(ourgamestruct->desc.host) + (sizeof(int32_t) * 8) +
-	         sizeof(ourgamestruct->secondaryHosts) + sizeof(ourgamestruct->extra) + sizeof(ourgamestruct->mapname) + sizeof(ourgamestruct->hostname) + sizeof(ourgamestruct->versionstring) +
+	         sizeof(ourgamestruct->secondaryHosts) + sizeof(ourgamestruct->extra) + sizeof(ourgamestruct->hostPort) + sizeof(ourgamestruct->mapname) + sizeof(ourgamestruct->hostname) + sizeof(ourgamestruct->versionstring) +
 	         sizeof(ourgamestruct->modlist) + (sizeof(uint32_t) * 9) ] = { 0 };
 	char *buffer = buf;
 	unsigned int i;
@@ -954,6 +1007,14 @@ static bool NETrecvGAMESTRUCT(Socket *sock, GAMESTRUCT *ourgamestruct)
 		uint32_t value = 0;
 		memcpy(&value, buffer, sizeof(value));
 		value = ntohl(value);
+		buffer += sizeof(value);
+		return value;
+	};
+
+	auto pop16 = [&]() -> uint16_t {
+		uint16_t value = 0;
+		memcpy(&value, buffer, sizeof(value));
+		value = ntohs(value);
 		buffer += sizeof(value);
 		return value;
 	};
@@ -1010,6 +1071,9 @@ static bool NETrecvGAMESTRUCT(Socket *sock, GAMESTRUCT *ourgamestruct)
 	// Copy a string
 	sstrcpy(ourgamestruct->extra, buffer);
 	buffer += sizeof(ourgamestruct->extra);
+
+	// Copy 16-bit host port
+	ourgamestruct->hostPort = pop16();
 
 	// Copy a string
 	sstrcpy(ourgamestruct->mapname, buffer);
@@ -1229,11 +1293,16 @@ int NETinit(bool bFirstCall)
 		NetPlay.isHostAlive = false;
 		NetPlay.HaveUpgrade = false;
 		NetPlay.gamePassword[0] = '\0';
-		NetPlay.MOTD = strdup("");
+		NetPlay.MOTD = nullptr;
 		sstrcpy(NetPlay.gamePassword, _("Enter password here"));
 		NETstartLogging();
 	}
 
+	if (NetPlay.MOTD)
+	{
+		free(NetPlay.MOTD);
+	}
+	NetPlay.MOTD = nullptr;
 	NetPlay.ShowedMOTD = false;
 	NetPlay.GamePassworded = false;
 	memset(&sync_counter, 0x0, sizeof(sync_counter));	//clear counters
@@ -1680,6 +1749,7 @@ static bool NETprocessSystemMessage(NETQUEUE playerQueue, uint8_t type)
 			int32_t team = 0;
 			int8_t ai = 0;
 			int8_t difficulty = 0;
+			uint8_t faction = FACTION_NORMAL;
 			bool error = false;
 
 			NETbeginDecode(playerQueue, NET_PLAYER_INFO);
@@ -1722,6 +1792,15 @@ static bool NETprocessSystemMessage(NETQUEUE playerQueue, uint8_t type)
 				NETbool(&NetPlay.players[index].ready);
 				NETint8_t(&ai);
 				NETint8_t(&difficulty);
+				NETuint8_t(&faction);
+
+				auto newFactionId = uintToFactionID(faction);
+				if (!newFactionId.has_value())
+				{
+					debug(LOG_ERROR, "MSG_PLAYER_INFO from %u: Faction ID (%u) out of range (max %u)", playerQueue.index, (unsigned int)faction, (unsigned int)MAX_FACTION_ID);
+					error = true;
+					break;
+				}
 
 				// Don't let anyone except the host change these, otherwise it will end up inconsistent at some point, and the game gets really messed up.
 				if (playerQueue.index == NetPlay.hostPlayer)
@@ -1731,6 +1810,7 @@ static bool NETprocessSystemMessage(NETQUEUE playerQueue, uint8_t type)
 					NetPlay.players[index].team = team;
 					NetPlay.players[index].ai = ai;
 					NetPlay.players[index].difficulty = static_cast<AIDifficulty>(difficulty);
+					NetPlay.players[index].faction = newFactionId.value();
 				}
 
 				debug(LOG_NET, "%s for player %u (%s)", n == 0 ? "Receiving MSG_PLAYER_INFO" : "                      and", (unsigned int)index, NetPlay.players[index].allocated ? "human" : "AI");
@@ -1944,7 +2024,7 @@ bool NETrecvNet(NETQUEUE *queue, uint8_t *type)
 	{
 		NETfixPlayerCount();
 		NETallowJoining();
-		NETprocessQueuedServerUpdates();
+		lobbyConnectionHandler.run();
 		NETcheckPlayers();		// make sure players are still alive & well
 	}
 
@@ -2357,7 +2437,10 @@ static ssize_t readLobbyResponse(Socket *sock, unsigned int timeout)
 	MOTDLength = ntohl(buffer[1]);
 
 	// Get status message
-	free(NetPlay.MOTD);
+	if (NetPlay.MOTD)
+	{
+		free(NetPlay.MOTD);
+	}
 	NetPlay.MOTD = (char *)malloc(MOTDLength + 1);
 	result = readAll(sock, NetPlay.MOTD, MOTDLength, timeout);
 	if (result != MOTDLength)
@@ -2392,23 +2475,35 @@ static ssize_t readLobbyResponse(Socket *sock, unsigned int timeout)
 error:
 	if (result == SOCKET_ERROR)
 	{
-		free(NetPlay.MOTD);
+		if (NetPlay.MOTD)
+		{
+			free(NetPlay.MOTD);
+		}
 		if (asprintf(&NetPlay.MOTD, "Error while connecting to the lobby server: %s\nMake sure port %d can receive incoming connections.", strSockError(getSockErr()), gameserver_port) == -1)
 		{
 			NetPlay.MOTD = nullptr;
 		}
-		NetPlay.ShowedMOTD = false;
-		debug(LOG_ERROR, "%s", NetPlay.MOTD);
+		else
+		{
+			NetPlay.ShowedMOTD = false;
+			debug(LOG_ERROR, "%s", NetPlay.MOTD);
+		}
 	}
 	else
 	{
-		free(NetPlay.MOTD);
+		if (NetPlay.MOTD)
+		{
+			free(NetPlay.MOTD);
+		}
 		if (asprintf(&NetPlay.MOTD, "Disconnected from lobby server. Failed to register game.") == -1)
 		{
 			NetPlay.MOTD = nullptr;
 		}
-		NetPlay.ShowedMOTD = false;
-		debug(LOG_ERROR, "%s", NetPlay.MOTD);
+		else
+		{
+			NetPlay.ShowedMOTD = false;
+			debug(LOG_ERROR, "%s", NetPlay.MOTD);
+		}
 	}
 
 	return SOCKET_ERROR;
@@ -2442,22 +2537,22 @@ bool readGameStructsList(Socket *sock, unsigned int timeout, const std::function
 	while (gamecount < gamesavailable)
 	{
 		// Attempt to receive a game description structure
-		GAMESTRUCT game;
-		memset(&game, 0x00, sizeof(game));
-		if (!NETrecvGAMESTRUCT(sock, &game))
+		GAMESTRUCT tmpGame;
+		memset(&tmpGame, 0x00, sizeof(tmpGame));
+		if (!NETrecvGAMESTRUCT(sock, &tmpGame))
 		{
 			debug(LOG_NET, "only %u game(s) received", (unsigned int)gamecount);
 			return false;
 		}
 
-		if (game.desc.host[0] == '\0')
+		if (tmpGame.desc.host[0] == '\0')
 		{
-			memset(game.desc.host, 0, sizeof(game.desc.host));
-			strncpy(game.desc.host, getSocketTextAddress(sock), sizeof(game.desc.host) - 1);
+			memset(tmpGame.desc.host, 0, sizeof(tmpGame.desc.host));
+			strncpy(tmpGame.desc.host, getSocketTextAddress(sock), sizeof(tmpGame.desc.host) - 1);
 		}
 
-		uint32_t Vmgr = (game.future4 & 0xFFFF0000) >> 16;
-		uint32_t Vmnr = (game.future4 & 0x0000FFFF);
+		uint32_t Vmgr = (tmpGame.future4 & 0xFFFF0000) >> 16;
+		uint32_t Vmnr = (tmpGame.future4 & 0x0000FFFF);
 
 		if (NETisGreaterVersion(Vmgr, Vmnr))
 		{
@@ -2465,9 +2560,9 @@ bool readGameStructsList(Socket *sock, unsigned int timeout, const std::function
 			NetPlay.HaveUpgrade = true;
 		}
 
-		if (game.desc.dwSize != 0)
+		if (tmpGame.desc.dwSize != 0)
 		{
-			if (!handleEnumerateGameFunc(game))
+			if (!handleEnumerateGameFunc(tmpGame))
 			{
 				// stop enumerating
 				break;
@@ -2480,227 +2575,245 @@ bool readGameStructsList(Socket *sock, unsigned int timeout, const std::function
 	return true;
 }
 
-static uint32_t lastServerUpdate = 0;
-static bool queuedServerUpdate = false;
-#define SERVER_UPDATE_MIN_INTERVAL 7 * GAME_TICKS_PER_SEC
-#define SERVER_UPDATE_MAX_INTERVAL 25 * GAME_TICKS_PER_SEC
-
-static inline bool canSendServerUpdateNow()
+bool LobbyServerConnectionHandler::connect()
 {
-	return (realTime - lastServerUpdate >= SERVER_UPDATE_MIN_INTERVAL);
+	if (server_not_there)
+	{
+		return false;
+	}
+	if (currentState == LobbyConnectionState::Connecting_WaitingForResponse || currentState == LobbyConnectionState::Connected)
+	{
+		return false; // already connecting or connected
+	}
+
+	bool bProcessingConnectOrDisconnectThisCall = true;
+	uint32_t gameId = 0;
+	SocketAddress *const hosts = resolveHost(masterserver_name, masterserver_port);
+
+	if (hosts == nullptr)
+	{
+		debug(LOG_ERROR, "Cannot resolve masterserver \"%s\": %s", masterserver_name, strSockError(getSockErr()));
+		free(NetPlay.MOTD);
+		if (asprintf(&NetPlay.MOTD, _("Could not resolve masterserver name (%s)!"), masterserver_name) == -1)
+		{
+			NetPlay.MOTD = nullptr;
+		}
+		server_not_there = true;
+		return bProcessingConnectOrDisconnectThisCall;
+	}
+
+	// Close an existing socket.
+	if (rs_socket != nullptr)
+	{
+		socketClose(rs_socket);
+		rs_socket = nullptr;
+	}
+
+	// try each address from resolveHost until we successfully connect.
+	rs_socket = socketOpenAny(hosts, 1500);
+	deleteSocketAddress(hosts);
+
+	// No address succeeded.
+	if (rs_socket == nullptr)
+	{
+		debug(LOG_ERROR, "Cannot connect to masterserver \"%s:%d\": %s", masterserver_name, masterserver_port, strSockError(getSockErr()));
+		free(NetPlay.MOTD);
+		if (asprintf(&NetPlay.MOTD, _("Error connecting to the lobby server: %s.\nMake sure port %d can receive incoming connections.\nIf you're using a router configure it to use UPnP\n or to forward the port to your system."),
+					 strSockError(getSockErr()), masterserver_port) == -1)
+		{
+			NetPlay.MOTD = nullptr;
+		}
+		server_not_there = true;
+		return bProcessingConnectOrDisconnectThisCall;
+	}
+
+	// Get a game ID
+	if (writeAll(rs_socket, "gaId", sizeof("gaId")) == SOCKET_ERROR
+		|| readAll(rs_socket, &gameId, sizeof(gameId), 10000) != sizeof(gameId))
+	{
+		free(NetPlay.MOTD);
+		if (asprintf(&NetPlay.MOTD, "Failed to retrieve a game ID: %s", strSockError(getSockErr())) == -1)
+		{
+			NetPlay.MOTD = nullptr;
+		}
+		else
+		{
+			debug(LOG_ERROR, "%s", NetPlay.MOTD);
+		}
+
+		// The socket has been invalidated, so get rid of it. (using them now may cause SIGPIPE).
+		disconnect();
+		return bProcessingConnectOrDisconnectThisCall;
+	}
+
+	gamestruct.gameId = ntohl(gameId);
+	debug(LOG_NET, "Using game ID: %u", (unsigned int)gamestruct.gameId);
+
+	// Register our game with the server
+	if (writeAll(rs_socket, "addg", sizeof("addg")) == SOCKET_ERROR
+		// and now send what the server wants
+		|| !NETsendGAMESTRUCT(rs_socket, &gamestruct))
+	{
+		debug(LOG_ERROR, "Failed to register game with server: %s", strSockError(getSockErr()));
+		disconnect();
+		return bProcessingConnectOrDisconnectThisCall;
+	}
+
+	lastServerUpdate = realTime;
+	queuedServerUpdate = false;
+
+	lastConnectionTime = realTime;
+	waitingForConnectionFinalize = allocSocketSet();
+	SocketSet_AddSocket(waitingForConnectionFinalize, rs_socket);
+
+	currentState = LobbyConnectionState::Connecting_WaitingForResponse;
+	return bProcessingConnectOrDisconnectThisCall;
 }
 
-static inline bool shouldSendServerKeepAliveNow()
+bool LobbyServerConnectionHandler::disconnect()
 {
-	return (realTime - lastServerUpdate >= SERVER_UPDATE_MAX_INTERVAL);
+	if (currentState == LobbyConnectionState::Disconnected)
+	{
+		return false; // already disconnected
+	}
+
+	if (rs_socket != nullptr)
+	{
+		// we don't need this anymore, so clean up
+		socketClose(rs_socket);
+		rs_socket = nullptr;
+		server_not_there = true;
+	}
+
+	queuedServerUpdate = false;
+
+	currentState = LobbyConnectionState::Disconnected;
+	return true;
+}
+
+void LobbyServerConnectionHandler::sendUpdate()
+{
+	if (server_not_there)
+	{
+		return;
+	}
+
+	if (canSendServerUpdateNow())
+	{
+		sendUpdateNow();
+	}
+	else
+	{
+		// queue future update
+		debug(LOG_NET, "Queueing server update");
+		queuedServerUpdate = true;
+	}
+}
+
+void LobbyServerConnectionHandler::sendUpdateNow()
+{
+	ASSERT_OR_RETURN(, rs_socket != nullptr, "Null socket");
+	if (!NETsendGAMESTRUCT(rs_socket, &gamestruct))
+	{
+		disconnect();
+		ActivityManager::instance().hostGameLobbyServerDisconnect();
+	}
+	lastServerUpdate = realTime;
+	queuedServerUpdate = false;
+	// newer lobby server will return a lobby response / status after each update call
+	if (rs_socket && readLobbyResponse(rs_socket, NET_TIMEOUT_DELAY) == SOCKET_ERROR)
+	{
+		disconnect();
+		ActivityManager::instance().hostGameLobbyServerDisconnect();
+	}
+}
+
+void LobbyServerConnectionHandler::sendKeepAlive()
+{
+	ASSERT_OR_RETURN(, rs_socket != nullptr, "Null socket");
+	if (writeAll(rs_socket, "keep", sizeof("keep")) == SOCKET_ERROR)
+	{
+		// The socket has been invalidated, so get rid of it. (using them now may cause SIGPIPE).
+		disconnect();
+		ActivityManager::instance().hostGameLobbyServerDisconnect();
+	}
+	lastServerUpdate = realTime;
+}
+
+void LobbyServerConnectionHandler::run()
+{
+	switch (currentState)
+	{
+		case LobbyConnectionState::Disconnected:
+			return;
+			break;
+		case LobbyConnectionState::Connecting_WaitingForResponse:
+		{
+			// check if response has been received
+			ASSERT_OR_RETURN(, waitingForConnectionFinalize != nullptr, "Null socket set");
+			ASSERT_OR_RETURN(, rs_socket != nullptr, "Null socket");
+			bool exceededTimeout = (realTime - lastConnectionTime >= 10000);
+			// We use readLobbyResponse to display error messages and handle state changes if there's no response
+			// So if exceededTimeout, just call it with a low timeout
+			int checkSocketRet = checkSockets(waitingForConnectionFinalize, NET_READ_TIMEOUT);
+			if (checkSocketRet == SOCKET_ERROR)
+			{
+				debug(LOG_ERROR, "Lost connection to lobby server");
+				disconnect();
+				break;
+			}
+			if (exceededTimeout || (checkSocketRet > 0 && socketReadReady(rs_socket)))
+			{
+				if (readLobbyResponse(rs_socket, NET_TIMEOUT_DELAY) == SOCKET_ERROR)
+				{
+					disconnect();
+					break;
+				}
+				deleteSocketSet(waitingForConnectionFinalize);
+				waitingForConnectionFinalize = nullptr;
+				currentState = LobbyConnectionState::Connected;
+			}
+			break;
+		}
+		case LobbyConnectionState::Connected:
+		{
+			// handle sending keep alive or queued updates
+			if (!queuedServerUpdate)
+			{
+				if (allow_joining && shouldSendServerKeepAliveNow())
+				{
+					// ensure that the lobby server knows we're still alive by sending a no-op "keep-alive"
+					sendKeepAlive();
+				}
+				break;
+			}
+			if (!canSendServerUpdateNow())
+			{
+				break;
+			}
+			queuedServerUpdate = false;
+			sendUpdateNow();
+			break;
+		}
+	}
 }
 
 bool NETregisterServer(int state)
 {
-	static Socket *rs_socket = nullptr;
-	static int registered = 0;
-	bool bProcessingConnectOrDisconnectThisCall = false;
-
-	if (server_not_there)
+	switch (state)
 	{
-		return bProcessingConnectOrDisconnectThisCall;
-	}
-
-	if (state != registered)
-	{
-		switch (state)
-		{
-		// Inform lobby server that we're still here, hosting a game lobby, waiting on players
-		case WZ_SERVER_KEEPALIVE:
-			{
-				if (rs_socket == nullptr)
-				{
-					return bProcessingConnectOrDisconnectThisCall;
-				}
-				if (writeAll(rs_socket, "keep", sizeof("keep")) == SOCKET_ERROR)
-				{
-					// The socket has been invalidated, so get rid of it. (using them now may cause SIGPIPE).
-					socketClose(rs_socket);
-					rs_socket = nullptr;
-					server_not_there = true;
-					ActivityManager::instance().hostGameLobbyServerDisconnect();
-				}
-				lastServerUpdate = realTime;
-				return bProcessingConnectOrDisconnectThisCall;
-			}
-			break;
-		// Update player counts
 		case WZ_SERVER_UPDATE:
-			{
-				if (rs_socket == nullptr)
-				{
-					queuedServerUpdate = false;
-					return bProcessingConnectOrDisconnectThisCall;
-				}
-
-				if (canSendServerUpdateNow())
-				{
-					if (!NETsendGAMESTRUCT(rs_socket, &gamestruct))
-					{
-						socketClose(rs_socket);
-						rs_socket = nullptr;
-						ActivityManager::instance().hostGameLobbyServerDisconnect();
-					}
-					lastServerUpdate = realTime;
-					queuedServerUpdate = false;
-					// newer lobby server will return a lobby response / status after each update call
-					if (rs_socket && readLobbyResponse(rs_socket, NET_TIMEOUT_DELAY) == SOCKET_ERROR)
-					{
-						socketClose(rs_socket);
-						server_not_there = true;
-						rs_socket = nullptr;
-						ActivityManager::instance().hostGameLobbyServerDisconnect();
-						return bProcessingConnectOrDisconnectThisCall;
-					}
-				}
-				else
-				{
-					// queue future update
-					debug(LOG_NET, "Queueing server update");
-					queuedServerUpdate = true;
-				}
-			}
+			lobbyConnectionHandler.sendUpdate();
 			break;
-
-		// Register a game with the lobby
 		case WZ_SERVER_CONNECT:
-			{
-				bProcessingConnectOrDisconnectThisCall = true;
-				uint32_t gameId = 0;
-				SocketAddress *const hosts = resolveHost(masterserver_name, masterserver_port);
-
-				if (hosts == nullptr)
-				{
-					debug(LOG_ERROR, "Cannot resolve masterserver \"%s\": %s", masterserver_name, strSockError(getSockErr()));
-					free(NetPlay.MOTD);
-					if (asprintf(&NetPlay.MOTD, _("Could not resolve masterserver name (%s)!"), masterserver_name) == -1)
-					{
-						NetPlay.MOTD = nullptr;
-					}
-					server_not_there = true;
-					return bProcessingConnectOrDisconnectThisCall;
-				}
-
-				// Close an existing socket.
-				if (rs_socket != nullptr)
-				{
-					socketClose(rs_socket);
-					rs_socket = nullptr;
-				}
-
-				// try each address from resolveHost until we successfully connect.
-				rs_socket = socketOpenAny(hosts, 1500);
-				deleteSocketAddress(hosts);
-
-				// No address succeeded.
-				if (rs_socket == nullptr)
-				{
-					debug(LOG_ERROR, "Cannot connect to masterserver \"%s:%d\": %s", masterserver_name, masterserver_port, strSockError(getSockErr()));
-					free(NetPlay.MOTD);
-					if (asprintf(&NetPlay.MOTD, _("Error connecting to the lobby server: %s.\nMake sure port %d can receive incoming connections.\nIf you're using a router configure it to use UPnP\n or to forward the port to your system."),
-					             strSockError(getSockErr()), masterserver_port) == -1)
-					{
-						NetPlay.MOTD = nullptr;
-					}
-					server_not_there = true;
-					return bProcessingConnectOrDisconnectThisCall;
-				}
-
-				// Get a game ID
-				if (writeAll(rs_socket, "gaId", sizeof("gaId")) == SOCKET_ERROR
-				    || readAll(rs_socket, &gameId, sizeof(gameId), 10000) != sizeof(gameId))
-				{
-					free(NetPlay.MOTD);
-					if (asprintf(&NetPlay.MOTD, "Failed to retrieve a game ID: %s", strSockError(getSockErr())) == -1)
-					{
-						NetPlay.MOTD = nullptr;
-					}
-					debug(LOG_ERROR, "%s", NetPlay.MOTD);
-
-					// The socket has been invalidated, so get rid of it. (using them now may cause SIGPIPE).
-					socketClose(rs_socket);
-					rs_socket = nullptr;
-					server_not_there = true;
-					return bProcessingConnectOrDisconnectThisCall;
-				}
-
-				gamestruct.gameId = ntohl(gameId);
-				debug(LOG_NET, "Using game ID: %u", (unsigned int)gamestruct.gameId);
-
-				// Register our game with the server
-				if (writeAll(rs_socket, "addg", sizeof("addg")) == SOCKET_ERROR
-				    // and now send what the server wants
-				    || !NETsendGAMESTRUCT(rs_socket, &gamestruct))
-				{
-					debug(LOG_ERROR, "Failed to register game with server: %s", strSockError(getSockErr()));
-					socketClose(rs_socket);
-					server_not_there = true;
-					rs_socket = nullptr;
-					return bProcessingConnectOrDisconnectThisCall;
-				}
-				lastServerUpdate = realTime;
-				queuedServerUpdate = false;
-
-				if (readLobbyResponse(rs_socket, NET_TIMEOUT_DELAY) == SOCKET_ERROR)
-				{
-					socketClose(rs_socket);
-					server_not_there = true;
-					rs_socket = nullptr;
-					return bProcessingConnectOrDisconnectThisCall;
-				}
-
-				// Preserves another register
-				registered = state;
-			}
+			return lobbyConnectionHandler.connect();
 			break;
-
-		// Unregister the game (close the socket)
 		case WZ_SERVER_DISCONNECT:
-			{
-				bProcessingConnectOrDisconnectThisCall = true;
-				if (rs_socket != nullptr)
-				{
-					// we don't need this anymore, so clean up
-					socketClose(rs_socket);
-					rs_socket = nullptr;
-					server_not_there = true;
-				}
-
-				queuedServerUpdate = false;
-
-				// Preserves another unregister
-				registered = state;
-			}
+			return lobbyConnectionHandler.disconnect();
 			break;
-		}
 	}
 
-	return bProcessingConnectOrDisconnectThisCall;
-}
-
-bool NETprocessQueuedServerUpdates()
-{
-	if (!queuedServerUpdate)
-	{
-		if (allow_joining && shouldSendServerKeepAliveNow())
-		{
-			// ensure that the lobby server knows we're still alive by sending a no-op "keep-alive"
-			NETregisterServer(WZ_SERVER_KEEPALIVE);
-		}
-		return false;
-	}
-	if (!canSendServerUpdateNow())
-	{
-		return false;
-	}
-	queuedServerUpdate = false;
-	NETregisterServer(WZ_SERVER_UPDATE);
-	return true;
+	return false;
 }
 
 // ////////////////////////////////////////////////////////////////////////
@@ -2735,8 +2848,6 @@ void NETfixPlayerCount()
 static void NETallowJoining()
 {
 	unsigned int i;
-	char buffer[10] = {'\0'};
-	char *p_buffer;
 	int32_t result;
 	bool connectFailed = true;
 	uint32_t major, minor;
@@ -2771,9 +2882,11 @@ static void NETallowJoining()
 
 	// This is here since we need to get the status, before we can show the info.
 	// FIXME: find better location to stick this?
-	if (!NetPlay.ShowedMOTD)
+	if ((!NetPlay.ShowedMOTD) && (NetPlay.MOTD != nullptr))
 	{
 		ShowMOTD();
+		free(NetPlay.MOTD);
+		NetPlay.MOTD = nullptr;
 		NetPlay.ShowedMOTD = true;
 	}
 
@@ -2811,7 +2924,9 @@ static void NETallowJoining()
 		NETinitQueue(NETnetTmpQueue(i));
 		SocketSet_AddSocket(tmp_socket_set, tmp_socket[i]);
 
-		p_buffer = buffer;
+		char buffer[10] = {'\0'};
+		char *p_buffer = buffer;
+
 		// We check for socket activity (connection), and then we check if we got data, since it is possible to have a connection
 		// and have no data waiting.
 		if (checkSockets(tmp_socket_set, NET_TIMEOUT_DELAY) > 0
@@ -2842,7 +2957,34 @@ static void NETallowJoining()
 				memcpy(&minor, p_buffer, sizeof(uint32_t));
 				minor = ntohl(minor);
 
-				if (NETisCorrectVersion(major, minor))
+				if (major == 0 && minor == 0)
+				{
+					// special case for lobby server "alive" check
+					// expects a special response that includes the gameId
+					const char ResponseStart[] = "WZLR";
+					char buf[(sizeof(char) * 4) + sizeof(uint32_t) + sizeof(uint32_t)] = { 0 };
+					char *pLobbyRespBuffer = buf;
+					auto push32 = [&pLobbyRespBuffer](uint32_t value) {
+						uint32_t swapped = htonl(value);
+						memcpy(pLobbyRespBuffer, &swapped, sizeof(swapped));
+						pLobbyRespBuffer += sizeof(swapped);
+					};
+
+					// Copy response prefix chars ("WZLR")
+					memcpy(pLobbyRespBuffer, ResponseStart, sizeof(char) * strlen(ResponseStart));
+					pLobbyRespBuffer += sizeof(char) * strlen(ResponseStart);
+
+					// Copy version of response
+					const uint32_t response_version = 1;
+					push32(response_version);
+
+					// Copy gameId (as 32bit large big endian number)
+					push32(gamestruct.gameId);
+
+					writeAll(tmp_socket[i], buf, sizeof(buf));
+					connectFailed = true;
+				}
+				else if (NETisCorrectVersion(major, minor))
 				{
 					result = htonl(ERROR_NOERROR);
 					memcpy(&buffer, &result, sizeof(result));
@@ -2862,7 +3004,7 @@ static void NETallowJoining()
 					addToBanList(rIP.c_str(), "BAD_USER");
 					connectFailed = true;
 				}
-				if ((int)NetPlay.playercount == gamestruct.desc.dwMaxPlayers)
+				if ((!connectFailed) && ((int)NetPlay.playercount == gamestruct.desc.dwMaxPlayers))
 				{
 					// early player count test, in case they happen to get in before updates.
 					// Tell the player that we are full.
@@ -2946,7 +3088,7 @@ static void NETallowJoining()
 						debug(LOG_ERROR, "freeing temp socket %p, couldn't create player!", static_cast<void *>(tmp_socket[i]));
 
 						// Tell the player that we are full.
-						uint8_t rejected = ERROR_FULL;
+						rejected = ERROR_FULL;
 						NETbeginEncode(NETnetTmpQueue(i), NET_REJECTED);
 						NETuint8_t(&rejected);
 						NETend();
@@ -3177,11 +3319,12 @@ bool NEThostGame(const char *SessionName, const char *PlayerName,
 	gamestruct.desc.dwUserFlags[3] = four;
 	memset(gamestruct.secondaryHosts, 0, sizeof(gamestruct.secondaryHosts));
 	sstrcpy(gamestruct.extra, "Extra");						// extra string (future use)
+	gamestruct.hostPort = gameserver_port;
 	sstrcpy(gamestruct.mapname, game.map);					// map we are hosting
 	sstrcpy(gamestruct.hostname, PlayerName);
 	sstrcpy(gamestruct.versionstring, versionString);		// version (string)
 	sstrcpy(gamestruct.modlist, getModList().c_str());      // List of mods
-	gamestruct.GAMESTRUCT_VERSION = 3;						// version of this structure
+	gamestruct.GAMESTRUCT_VERSION = 4;						// version of this structure
 	gamestruct.game_version_major = NETCODE_VERSION_MAJOR;	// Netcode Major version
 	gamestruct.game_version_minor = NETCODE_VERSION_MINOR;	// NetCode Minor version
 //	gamestruct.privateGame = 0;								// if true, it is a private game
@@ -3315,8 +3458,8 @@ bool NETenumerateGames(const std::function<bool (const GAMESTRUCT& game)>& handl
 	// Earlier versions (and earlier lobby servers) restricted this to no more than 11
 	std::vector<GAMESTRUCT> initialBatchOfGameStructs;
 
-	if (!readGameStructsList(tcp_socket, NET_TIMEOUT_DELAY, [&initialBatchOfGameStructs](const GAMESTRUCT &game) -> bool {
-		initialBatchOfGameStructs.push_back(game);
+	if (!readGameStructsList(tcp_socket, NET_TIMEOUT_DELAY, [&initialBatchOfGameStructs](const GAMESTRUCT &lobbyGame) -> bool {
+		initialBatchOfGameStructs.push_back(lobbyGame);
 		return true; // continue enumerating
 	}))
 	{
@@ -3355,9 +3498,9 @@ bool NETenumerateGames(const std::function<bool (const GAMESTRUCT& game)>& handl
 		if (!ignoreFirstBatch)
 		{
 			// pass the first batch to the handleEnumerateGameFunc
-			for (const auto& game : initialBatchOfGameStructs)
+			for (const auto& lobbyGame : initialBatchOfGameStructs)
 			{
-				if (!handleEnumerateGameFunc(game))
+				if (!handleEnumerateGameFunc(lobbyGame))
 				{
 					// stop enumerating
 					requestSecondBatch = false;
@@ -3396,9 +3539,9 @@ bool NETenumerateGames(const std::function<bool (const GAMESTRUCT& game)>& handl
 	else
 	{
 		// to support earlier lobby servers that don't provide this additional second batch (and optional parameter), just process the first batch
-		for (const auto& game : initialBatchOfGameStructs)
+		for (const auto& lobbyGame : initialBatchOfGameStructs)
 		{
-			if (!handleEnumerateGameFunc(game))
+			if (!handleEnumerateGameFunc(lobbyGame))
 			{
 				// stop enumerating
 				break;
@@ -3417,7 +3560,7 @@ bool NETfindGames(std::vector<GAMESTRUCT>& results, size_t startingIndex, size_t
 {
 	size_t gamecount = 0;
 	results.clear();
-	bool success = NETenumerateGames([&results, &gamecount, startingIndex, resultsLimit, onlyMatchingLocalVersion](const GAMESTRUCT &game) -> bool {
+	bool success = NETenumerateGames([&results, &gamecount, startingIndex, resultsLimit, onlyMatchingLocalVersion](const GAMESTRUCT &lobbyGame) -> bool {
 		if (gamecount++ < startingIndex)
 		{
 			// skip this item, continue
@@ -3428,12 +3571,12 @@ bool NETfindGames(std::vector<GAMESTRUCT>& results, size_t startingIndex, size_t
 			// stop processing games
 			return false;
 		}
-		if ((onlyMatchingLocalVersion) && ((game.game_version_major != (unsigned)NETGetMajorVersion()) || (game.game_version_minor != (unsigned)NETGetMinorVersion())))
+		if ((onlyMatchingLocalVersion) && ((lobbyGame.game_version_major != (unsigned)NETGetMajorVersion()) || (lobbyGame.game_version_minor != (unsigned)NETGetMinorVersion())))
 		{
 			// skip this non-matching version, continue
 			return true;
 		}
-		results.push_back(game);
+		results.push_back(lobbyGame);
 		return true;
 	});
 
@@ -3444,13 +3587,13 @@ bool NETfindGame(uint32_t gameId, GAMESTRUCT& output)
 {
 	bool foundMatch = false;
 	memset(&output, 0x00, sizeof(output));
-	NETenumerateGames([&foundMatch, &output, gameId](const GAMESTRUCT &game) -> bool {
-		if (game.gameId != gameId)
+	NETenumerateGames([&foundMatch, &output, gameId](const GAMESTRUCT &lobbyGame) -> bool {
+		if (lobbyGame.gameId != gameId)
 		{
 			// not a match - continue enumerating
 			return true;
 		}
-		output = game;
+		output = lobbyGame;
 		foundMatch = true;
 		return false; // stop searching
 	});
@@ -4245,6 +4388,7 @@ const char *messageTypeToString(unsigned messageType_)
 	case NET_KICK:                      return "NET_KICK";
 	case NET_FIREUP:                    return "NET_FIREUP";
 	case NET_COLOURREQUEST:             return "NET_COLOURREQUEST";
+	case NET_FACTIONREQUEST:             return "NET_FACTIONREQUEST";
 	case NET_AITEXTMSG:                 return "NET_AITEXTMSG";
 	case NET_BEACONMSG:                 return "NET_BEACONMSG";
 	case NET_TEAMREQUEST:               return "NET_TEAMREQUEST";

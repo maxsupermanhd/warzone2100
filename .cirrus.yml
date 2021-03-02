@@ -7,8 +7,8 @@ freebsd_build_task:
   freebsd_instance:
     # See the list of available FreeBSD image families here: https://cirrus-ci.org/guide/FreeBSD/
     matrix:
-      - image_family: freebsd-12-1-snap # FreeBSD 12.1-STABLE
-#      - image_family: freebsd-11-3-snap # FreeBSD 11.3-STABLE # currently disabled because of Qt5 port issue
+      - image_family: freebsd-12-2 # FreeBSD 12.2-RELEASE
+      - image_family: freebsd-11-4 # FreeBSD 11.4-RELEASE
 #    cpu: 4
 #    memory: 8G
 
@@ -45,7 +45,7 @@ freebsd_build_task:
 #     - brew install cmake
 #     - brew install gettext
 #     # NOTE: Specify an explicit Asciidoctor version to help ensure reproducible builds
-#     - sudo gem install asciidoctor -v 2.0.10 --no-document
+#     - sudo gem install asciidoctor -v 2.0.12 --no-document
 #     # gcc6+ is currently required to bootstrap vcpkg on macOS
 #     - brew install gcc@7
 #     - sudo bundle install --gemfile="macosx/BuildBot/Gemfile"

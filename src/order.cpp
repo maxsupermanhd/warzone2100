@@ -1392,7 +1392,6 @@ void orderDroidBase(DROID *psDroid, DROID_ORDER_DATA *psOrder)
 		psDroid->order = *psOrder;
 		ASSERT_OR_RETURN(, !psDroid->order.psStats || psDroid->order.psStats->type != REF_DEMOLISH, "Cannot build demolition");
 		actionDroid(psDroid, DACTION_BUILD, psOrder->pos.x, psOrder->pos.y);
-		intBuildStarted(psDroid);
 		objTrace(psDroid->id, "Starting new construction effort of %s", psOrder->psStats ? getStatsName(psOrder->psStats) : "NULL");
 		break;
 	case DORDER_BUILDMODULE:
@@ -1405,7 +1404,6 @@ void orderDroidBase(DROID *psDroid, DROID_ORDER_DATA *psOrder)
 		ASSERT_OR_RETURN(, psDroid->order.psStats != nullptr, "should have found a module stats");
 		ASSERT_OR_RETURN(, !psDroid->order.psStats || psDroid->order.psStats->type != REF_DEMOLISH, "Cannot build demolition");
 		actionDroid(psDroid, DACTION_BUILD, psOrder->psObj->pos.x, psOrder->psObj->pos.y);
-		intBuildStarted(psDroid);
 		objTrace(psDroid->id, "Starting new upgrade of %s", psOrder->psStats ? getStatsName(psOrder->psStats) : "NULL");
 		break;
 	case DORDER_HELPBUILD:
@@ -1417,7 +1415,6 @@ void orderDroidBase(DROID *psDroid, DROID_ORDER_DATA *psOrder)
 		psDroid->order.psStats = ((STRUCTURE *)psOrder->psObj)->pStructureType;
 		ASSERT_OR_RETURN(,!psDroid->order.psStats || psDroid->order.psStats->type != REF_DEMOLISH, "Cannot build demolition");
 		actionDroid(psDroid, DACTION_BUILD, psDroid->order.pos.x, psDroid->order.pos.y);
-		intBuildStarted(psDroid);
 		objTrace(psDroid->id, "Helping construction of %s", psOrder->psStats ? getStatsName(psDroid->order.psStats) : "NULL");
 		break;
 	case DORDER_DEMOLISH:
@@ -1428,7 +1425,6 @@ void orderDroidBase(DROID *psDroid, DROID_ORDER_DATA *psOrder)
 		psDroid->order = *psOrder;
 		psDroid->order.pos = psOrder->psObj->pos.xy();
 		actionDroid(psDroid, DACTION_DEMOLISH, psOrder->psObj);
-		intBuildStarted(psDroid);
 		break;
 	case DORDER_REPAIR:
 		if (!(psDroid->droidType == DROID_CONSTRUCT || psDroid->droidType == DROID_CYBORG_CONSTRUCT))
@@ -2011,7 +2007,7 @@ void orderDroidStatsTwoLocDirAdd(DROID *psDroid, DROID_ORDER order, STRUCTURE_ST
 /** This function returns false if droid's order and order don't match or the order is not a location order. Else ppsStats = psDroid->psTarStats, (pX,pY) = psDroid.(orderX,orderY) and it returns true.
  * @todo seems closely related to orderStateLoc()
  */
-bool orderStateStatsLoc(DROID *psDroid, DROID_ORDER order, BASE_STATS **ppsStats, UDWORD *pX, UDWORD *pY)
+bool orderStateStatsLoc(DROID *psDroid, DROID_ORDER order, STRUCTURE_STATS **ppsStats)
 {
 	bool	match = false;
 
@@ -2045,8 +2041,6 @@ bool orderStateStatsLoc(DROID *psDroid, DROID_ORDER order, BASE_STATS **ppsStats
 		if (psDroid->action == DACTION_MOVETOBUILD)
 		{
 			*ppsStats = psDroid->order.psStats;
-			*pX = psDroid->order.pos.x;
-			*pY = psDroid->order.pos.y;
 			return true;
 		}
 		break;

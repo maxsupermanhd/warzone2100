@@ -107,6 +107,7 @@
 #include "init.h"
 #include "levels.h"
 #include "wrappers.h"
+#include "faction.h"
 
 #include "activity.h"
 #include <algorithm>
@@ -207,6 +208,7 @@ static void displayChatEdit(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset);
 static void displayPlayer(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset);
 static void displayPosition(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset);
 static void displayColour(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset);
+static void displayFaction(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset);
 static void displayTeamChooser(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset);
 static void displayAi(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset);
 static void displayDifficulty(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset);
@@ -239,6 +241,7 @@ static	void	SendFireUp();
 static	void	decideWRF();
 
 static bool		SendColourRequest(UBYTE player, UBYTE col);
+static bool		SendFactionRequest(UBYTE player, UBYTE faction);
 static bool		SendPositionRequest(UBYTE player, UBYTE chosenPlayer);
 bool changeReadyStatus(UBYTE player, bool bReady);
 static void stopJoining(std::shared_ptr<WzTitleUI> parent);
@@ -246,6 +249,7 @@ static int difficultyIcon(int difficulty);
 
 static void sendRoomChatMessage(char const *text);
 
+static int factionIcon(FactionID faction);
 // ////////////////////////////////////////////////////////////////////////////
 // map previews..
 
@@ -430,7 +434,7 @@ void loadMultiScripts()
 	if (defaultRules)
 	{
 		debug(LOG_SAVE, "Loading default rules");
-		loadGlobalScript("multiplay/skirmish/rules.js");
+		loadGlobalScript("multiplay/script/rules/init.js");
 	}
 
 	// Backup data hashes, since AI and scavenger scripts aren't run on all clients.
@@ -475,7 +479,7 @@ void loadMultiScripts()
 	if (game.scavengers && myResponsibility(scavengerPlayer()))
 	{
 		debug(LOG_SAVE, "Loading scavenger AI for player %d", scavengerPlayer());
-		loadPlayerScript("multiplay/script/scavfact.js", scavengerPlayer(), AIDifficulty::EASY);
+		loadPlayerScript("multiplay/script/scavengers/init.js", scavengerPlayer(), AIDifficulty::EASY);
 	}
 
 	// Restore data hashes, since AI and scavenger scripts aren't run on all clients.
@@ -656,6 +660,11 @@ void loadMapPreview(bool hideInterface)
 		plGroundL = WZCOL_TERC3_GROUND_LOW;
 		plGroundH = WZCOL_TERC3_GROUND_HIGH;
 		break;
+	default:
+		debug(LOG_FATAL, "Invalid tileset type");
+		// silence warnings
+		abort();
+		return;
 	}
 
 	oursize = sizeof(char) * BACKDROP_HACK_WIDTH * BACKDROP_HACK_HEIGHT;
@@ -901,9 +910,9 @@ std::vector<JoinConnectionDescription> findLobbyGame(const std::string& lobbyAdd
 		setLobbyError(ERROR_NOERROR);
 	}
 
-	GAMESTRUCT game;
-	memset(&game, 0x00, sizeof(game));
-	if (!NETfindGame(lobbyGameId, game))
+	GAMESTRUCT lobbyGame;
+	memset(&lobbyGame, 0x00, sizeof(lobbyGame));
+	if (!NETfindGame(lobbyGameId, lobbyGame))
 	{
 		// failed to get list of games from lobby server
 		debug(LOG_ERROR, "Failed to find gameId in lobby server");
@@ -918,23 +927,23 @@ std::vector<JoinConnectionDescription> findLobbyGame(const std::string& lobbyAdd
 		return {};
 	}
 
-	if (game.desc.dwSize == 0)
+	if (lobbyGame.desc.dwSize == 0)
 	{
 		debug(LOG_ERROR, "Invalid game struct");
 		cleanup();
 		return {};
 	}
 
-	if (game.gameId != lobbyGameId)
+	if (lobbyGame.gameId != lobbyGameId)
 	{
-		ASSERT(game.gameId == lobbyGameId, "NETfindGame returned a non-matching game"); // logic error
+		ASSERT(lobbyGame.gameId == lobbyGameId, "NETfindGame returned a non-matching game"); // logic error
 		cleanup();
 		return {};
 	}
 
 	// found the game id, but is it compatible?
 
-	if (!NETisCorrectVersion(game.game_version_major, game.game_version_minor))
+	if (!NETisCorrectVersion(lobbyGame.game_version_major, lobbyGame.game_version_minor))
 	{
 		// incompatible version
 		debug(LOG_ERROR, "Failed to find a matching + compatible game in the lobby server");
@@ -943,14 +952,14 @@ std::vector<JoinConnectionDescription> findLobbyGame(const std::string& lobbyAdd
 	}
 
 	// found the game
-	if (strlen(game.desc.host) == 0)
+	if (strlen(lobbyGame.desc.host) == 0)
 	{
 		debug(LOG_ERROR, "Found the game, but no host details available");
 		cleanup();
 		return {};
 	}
-	std::string host = game.desc.host;
-	return {JoinConnectionDescription(host, 0)};
+	std::string host = lobbyGame.desc.host;
+	return {JoinConnectionDescription(host, lobbyGame.hostPort)};
 }
 
 static JoinGameResult joinGameInternal(std::vector<JoinConnectionDescription> connection_list, std::shared_ptr<WzTitleUI> oldUI);
@@ -1567,6 +1576,7 @@ void WzMultiplayerOptionsTitleUI::closeAllChoosers()
 {
 	closeColourChooser();
 	closeTeamChooser();
+	closeFactionChooser();
 	closePositionChooser();
 
 	// AiChooser and DifficultyChooser currently use the same form, so to avoid a double-delete-later, do it once explicitly here
@@ -1584,6 +1594,7 @@ void WzMultiplayerOptionsTitleUI::initInlineChooser(uint32_t player)
 	widgDelete(psWScreen, MULTIOP_TEAMS_START + player);
 	widgDelete(psWScreen, MULTIOP_READY_FORM_ID + player);
 	widgDelete(psWScreen, MULTIOP_COLOUR_START + player);
+	widgDelete(psWScreen, MULTIOP_FACTION_START + player);
 
 	// remove any choosers already up
 	closeAllChoosers();
@@ -1949,7 +1960,7 @@ void WzMultiplayerOptionsTitleUI::openColourChooser(uint32_t player)
 	// add form.
 	auto psParentForm = (W_FORM *)widgGetFromID(psWScreen, MULTIOP_PLAYERS);
 	addInlineChooserBlueForm(psInlineChooserOverlayScreen, psParentForm, MULTIOP_COLCHOOSER_FORM, "",
-		8,
+		7,
 		playerBoxHeight(player),
 		MULTIOP_ROW_WIDTH, MULTIOP_PLAYERHEIGHT);
 
@@ -1980,7 +1991,7 @@ void WzMultiplayerOptionsTitleUI::openColourChooser(uint32_t player)
 		};
 
 		addMultiButWithClickHandler(psInlineChooserOverlayScreen, MULTIOP_COLCHOOSER_FORM, MULTIOP_COLCHOOSER + getPlayerColour(i),
-			i * (flagW * spaceDiv + space) / spaceDiv + 7, 4, // x, y
+			i * (flagW * spaceDiv + space) / spaceDiv + 4, 4, // x, y
 			flagW, flagH,  // w, h
 			getPlayerColourName(i), IMAGE_PLAYERN, IMAGE_PLAYERN_HI, IMAGE_PLAYERN_HI, onClickHandler, getPlayerColour(i)
 		);
@@ -2008,6 +2019,13 @@ void WzMultiplayerOptionsTitleUI::closeTeamChooser()
 	widgRemoveOverlayScreen(psInlineChooserOverlayScreen);
 }
 
+void WzMultiplayerOptionsTitleUI::closeFactionChooser()
+{
+	inlineChooserUp = -1;
+	widgDeleteLater(psInlineChooserOverlayScreen, MULTIOP_FACCHOOSER_FORM);
+	widgRemoveOverlayScreen(psInlineChooserOverlayScreen);
+}
+
 void WzMultiplayerOptionsTitleUI::closeAiChooser()
 {
 	// AiChooser and DifficultyChooser currently use the same formID
@@ -2025,6 +2043,56 @@ void WzMultiplayerOptionsTitleUI::closeDifficultyChooser()
 void WzMultiplayerOptionsTitleUI::closePositionChooser()
 {
 	positionChooserUp = -1;
+}
+
+void WzMultiplayerOptionsTitleUI::openFactionChooser(uint32_t player)
+{
+	ASSERT_OR_RETURN(, player < MAX_PLAYERS, "Invalid player number");
+	initInlineChooser(player);
+
+	// add form.
+	auto psParentForm = (W_FORM *)widgGetFromID(psWScreen, MULTIOP_PLAYERS);
+	addInlineChooserBlueForm(psInlineChooserOverlayScreen, psParentForm, MULTIOP_FACCHOOSER_FORM, "",
+		7,
+		playerBoxHeight(player),
+		MULTIOP_ROW_WIDTH, MULTIOP_PLAYERHEIGHT);
+
+	// add the flags
+	int flagW = iV_GetImageWidth(FrontImages, IMAGE_FACTION_NORMAL) + 4;
+	int flagH = iV_GetImageHeight(FrontImages, IMAGE_PLAYERN);
+	int space = MULTIOP_ROW_WIDTH - 0 - flagW * NUM_FACTIONS;
+	int spaceDiv = NUM_FACTIONS;
+	space = std::min(space, 5 * spaceDiv);
+
+	auto psWeakTitleUI = std::weak_ptr<WzMultiplayerOptionsTitleUI>(std::dynamic_pointer_cast<WzMultiplayerOptionsTitleUI>(shared_from_this()));
+
+	for (unsigned int i = 0; i < NUM_FACTIONS; i++)
+	{
+		auto onClickHandler = [player, psWeakTitleUI](W_BUTTON &button) {
+			UDWORD id = button.id;
+			auto pStrongPtr = psWeakTitleUI.lock();
+			ASSERT_OR_RETURN(, pStrongPtr.operator bool(), "WzMultiplayerOptionsTitleUI no longer exists");
+
+			STATIC_ASSERT(MULTIOP_FACCHOOSER + NUM_FACTIONS - 1 <= MULTIOP_FACCHOOSER_END);
+			if (id >= MULTIOP_FACCHOOSER && id <= MULTIOP_FACCHOOSER + NUM_FACTIONS -1)
+			{
+				resetReadyStatus(false, true);
+				uint8_t idx = id - MULTIOP_FACCHOOSER;
+				SendFactionRequest(player, idx);
+				pStrongPtr->closeFactionChooser();
+				pStrongPtr->addPlayerBox(true);
+			}
+		};
+
+		addMultiButWithClickHandler(psInlineChooserOverlayScreen, MULTIOP_FACCHOOSER_FORM, MULTIOP_FACCHOOSER + i,
+			i * (flagW * spaceDiv + space) / spaceDiv + 7,  4, // x, y
+			flagW, flagH,  // w, h
+			to_localized_string(static_cast<FactionID>(i)),
+			IMAGE_FACTION_NORMAL+i, IMAGE_FACTION_NORMAL_HI+i, IMAGE_FACTION_NORMAL_HI+i, onClickHandler
+		);
+	}
+
+	inlineChooserUp = player;
 }
 
 static void changeTeam(UBYTE player, UBYTE team)
@@ -2076,6 +2144,11 @@ bool recvTeamRequest(NETQUEUE queue)
 	if (whosResponsible(player) != queue.index)
 	{
 		HandleBadParam("NET_TEAMREQUEST given incorrect params.", player, queue.index);
+		return false;
+	}
+
+	if (locked.teams)
+	{
 		return false;
 	}
 
@@ -2239,6 +2312,27 @@ static bool SendColourRequest(UBYTE player, UBYTE col)
 	return true;
 }
 
+static bool SendFactionRequest(UBYTE player, UBYTE faction)
+{
+	// TODO: needs to be rewritten from scratch
+	ASSERT_OR_RETURN(false, faction <= static_cast<UBYTE>(MAX_FACTION_ID), "Invalid faction: %u", (unsigned int)faction);
+	if (NetPlay.isHost)			// do or request the change
+	{
+		NetPlay.players[player].faction = static_cast<FactionID>(faction);
+		NETBroadcastPlayerInfo(player);
+		return true;
+	}
+	else
+	{
+		// clients tell the host which color they want
+		NETbeginEncode(NETnetQueue(NET_HOST_ONLY), NET_FACTIONREQUEST);
+		NETuint8_t(&player);
+		NETuint8_t(&faction);
+		NETend();
+	}
+	return true;
+}
+
 static bool SendPositionRequest(UBYTE player, UBYTE position)
 {
 	if (NetPlay.isHost)			// do or request the change
@@ -2254,6 +2348,44 @@ static bool SendPositionRequest(UBYTE player, UBYTE position)
 		NETuint8_t(&position);
 		NETend();
 	}
+	return true;
+}
+
+bool recvFactionRequest(NETQUEUE queue)
+{
+	ASSERT_HOST_ONLY(return true);
+
+	NETbeginDecode(queue, NET_FACTIONREQUEST);
+
+	UBYTE player, faction;
+	NETuint8_t(&player);
+	NETuint8_t(&faction);
+	NETend();
+
+	if (player >= MAX_PLAYERS)
+	{
+		debug(LOG_ERROR, "Invalid NET_FACTIONREQUEST from player %d: Tried to change player %d to faction %d",
+		      queue.index, (int)player, (int)faction);
+		return false;
+	}
+
+	if (whosResponsible(player) != queue.index)
+	{
+		HandleBadParam("NET_FACTIONREQUEST given incorrect params.", player, queue.index);
+		return false;
+	}
+
+	auto newFactionId = uintToFactionID(faction);
+	if (!newFactionId.has_value())
+	{
+		HandleBadParam("NET_FACTIONREQUEST given incorrect params.", player, queue.index);
+		return false;
+	}
+
+	resetReadyStatus(false, true);
+
+	NetPlay.players[player].faction = newFactionId.value();
+	NETBroadcastPlayerInfo(player);
 	return true;
 }
 
@@ -2308,6 +2440,11 @@ bool recvPositionRequest(NETQUEUE queue)
 	if (whosResponsible(player) != queue.index)
 	{
 		HandleBadParam("NET_POSITIONREQUEST given incorrect params.", player, queue.index);
+		return false;
+	}
+
+	if (locked.position)
+	{
 		return false;
 	}
 
@@ -2511,6 +2648,22 @@ void WzMultiplayerOptionsTitleUI::addPlayerBox(bool players)
 			sColInit.UserData = i;
 			widgAddButton(psWScreen, &sColInit);
 
+			// draw player faction
+			W_BUTINIT sFacInit;
+			sFacInit.formID = MULTIOP_PLAYERS;
+			sFacInit.id = MULTIOP_FACTION_START+i;
+			sFacInit.x = 7 + MULTIOP_TEAMSWIDTH+MULTIOP_COLOUR_WIDTH;
+			sFacInit.y = playerBoxHeight(i);
+			sFacInit.width = MULTIOP_FACTION_WIDTH;
+			sFacInit.height = MULTIOP_PLAYERHEIGHT;
+			if (selectedPlayer == i || NetPlay.isHost)
+			{
+				sFacInit.pTip = _("Click to change player faction");
+			}
+			sFacInit.pDisplay = displayFaction;
+			sFacInit.UserData = i;
+			widgAddButton(psWScreen, &sFacInit);
+
 			if (ingame.localOptionsReceived)
 			{
 				// do not draw "Ready" button if all players are on the same team,
@@ -2524,9 +2677,9 @@ void WzMultiplayerOptionsTitleUI::addPlayerBox(bool players)
 				W_BUTINIT sButInit;
 				sButInit.formID = MULTIOP_PLAYERS;
 				sButInit.id = MULTIOP_PLAYER_START + i;
-				sButInit.x = 7 + MULTIOP_TEAMSWIDTH + MULTIOP_COLOUR_WIDTH;
+				sButInit.x = 7 + MULTIOP_TEAMSWIDTH + MULTIOP_COLOUR_WIDTH + MULTIOP_FACTION_WIDTH;
 				sButInit.y = playerBoxHeight(i);
-				sButInit.width = MULTIOP_PLAYERWIDTH - MULTIOP_TEAMSWIDTH - MULTIOP_READY_WIDTH - MULTIOP_COLOUR_WIDTH;
+				sButInit.width = MULTIOP_PLAYERWIDTH - MULTIOP_TEAMSWIDTH - MULTIOP_READY_WIDTH - MULTIOP_COLOUR_WIDTH - MULTIOP_FACTION_WIDTH;
 				sButInit.height = MULTIOP_PLAYERHEIGHT;
 				if ((selectedPlayer == i || NetPlay.isHost) && NetPlay.players[i].allocated && !locked.position)
 				{
@@ -3098,6 +3251,18 @@ static void loadMapPlayerSettings(WzConfig& ini)
 				if (strcasecmp(difficultyList[j], value.toUtf8().c_str()) == 0)
 				{
 					NetPlay.players[i].difficulty = difficultyValue[j];
+				}
+			}
+		}
+		if (ini.contains("faction"))
+		{
+			WzString value = ini.value("faction", "Normal").toWzString();
+			for (uint8_t f_id = 0; f_id < NUM_FACTIONS; ++f_id)
+			{
+				const FACTION* faction = getFactionByID(static_cast<FactionID>(f_id));
+				if (faction->name == value)
+				{
+					NetPlay.players[i].faction = static_cast<FactionID>(f_id);
 				}
 			}
 		}
@@ -3802,6 +3967,15 @@ void WzMultiplayerOptionsTitleUI::processMultiopWidgets(UDWORD id)
 		openDifficultyChooser(id - MULTIOP_DIFFICULTY_INIT_START);
 		addPlayerBox(true);
 	}
+
+	// clicked on faction chooser button
+	if (id >= MULTIOP_FACTION_START && id <= MULTIOP_FACTION_END && (id - MULTIOP_FACTION_START == selectedPlayer || NetPlay.isHost))
+	{
+		if (positionChooserUp < 0)		// not choosing something else already
+		{
+			openFactionChooser(id - MULTIOP_FACTION_START);
+		}
+	}
 }
 
 /* Start a multiplayer or skirmish game */
@@ -3914,6 +4088,10 @@ void WzMultiplayerOptionsTitleUI::frontendMultiMessages(bool running)
 
 		case NET_COLOURREQUEST:
 			recvColourRequest(queue);
+			break;
+
+		case NET_FACTIONREQUEST:
+			recvFactionRequest(queue);
 			break;
 
 		case NET_POSITIONREQUEST:
@@ -4177,8 +4355,8 @@ TITLECODE WzMultiplayerOptionsTitleUI::run()
 		WidgetTriggers const &triggers = widgRunScreen(psRScreen);
 		unsigned id = triggers.empty() ? 0 : triggers.front().widget->id; // Just use first click here, since the next click could be on another menu.
 
-		LEVEL_DATASET *mapData;
-		bool isHoverPreview;
+		LEVEL_DATASET *mapData = nullptr;
+		bool isHoverPreview = false;
 		WzString sTemp;
 		if (runMultiRequester(id, &id, &sTemp, &mapData, &isHoverPreview))
 		{
@@ -4596,6 +4774,17 @@ static int difficultyIcon(int difficulty)
 	}
 }
 
+static int factionIcon(FactionID faction)
+{
+	switch (faction)
+	{
+	case 0: return IMAGE_FACTION_NORMAL;
+	case 1: return IMAGE_FACTION_NEXUS;
+	case 2: return IMAGE_FACTION_COLLECTIVE;
+	default: return IMAGE_NO;	/// what??
+	}
+}
+
 static void displayDifficulty(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 {
 	// Any widget using displayDifficulty must have its pUserData initialized to a (DisplayDifficultyCache*)
@@ -4821,6 +5010,20 @@ void displayColour(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 		int player = getPlayerColour(j);
 		STATIC_ASSERT(MAX_PLAYERS <= 16);
 		iV_DrawImageTc(FrontImages, IMAGE_PLAYERN, IMAGE_PLAYERN_TC, x + 7, y + 9, pal_GetTeamColour(player));
+	}
+}
+
+void displayFaction(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
+{
+	const int x = xOffset + psWidget->x();
+	const int y = yOffset + psWidget->y();
+	const int j = psWidget->UserData;
+
+	drawBlueBox(x, y, psWidget->width(), psWidget->height());
+	if (NetPlay.players[j].wzFiles.empty() && NetPlay.players[j].difficulty != AIDifficulty::DISABLED)
+	{
+		FactionID faction = NetPlay.players[j].faction;
+		iV_DrawImage(FrontImages, factionIcon(faction), x + 5, y + 8);
 	}
 }
 

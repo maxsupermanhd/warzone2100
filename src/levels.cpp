@@ -53,6 +53,8 @@
 #include "wrappers.h"
 #include "activity.h"
 
+#include <unordered_set>
+
 extern int lev_get_lineno();
 extern char *lev_get_text();
 extern int lev_lex();
@@ -187,7 +189,7 @@ Sha256 levGetMapNameHash(char const *mapName)
 // parse a level description data file
 // the ignoreWrf hack is for compatibility with old maps that try to link in various
 // data files that we have removed
-bool levParse(const char *buffer, size_t size, searchPathMode datadir, bool ignoreWrf, char const *realFileName)
+bool levParse(const char *buffer, size_t size, searchPathMode pathMode, bool ignoreWrf, char const *realFileName)
 {
 	lexerinput_t input;
 	LEVELPARSER_STATE state;
@@ -228,7 +230,7 @@ bool levParse(const char *buffer, size_t size, searchPathMode datadir, bool igno
 				memset(psDataSet, 0, sizeof(LEVEL_DATASET));
 				psDataSet->players = 1;
 				psDataSet->game = -1;
-				psDataSet->dataDir = datadir;
+				psDataSet->dataDir = pathMode;
 				psDataSet->realFileName = realFileName != nullptr ? strdup(realFileName) : nullptr;
 				psDataSet->realFileHash.setZero();  // The hash is only calculated on demand; for example, if the map name matches.
 				psLevels.push_back(psDataSet);
@@ -755,6 +757,25 @@ bool levLoadData(char const *name, Sha256 const *hash, char *pSaveName, GAME_TYP
 			}
 		}
 	}
+	// preload faction IMDs
+	std::unordered_set<FactionID> enabledNonNormalFactions = getEnabledFactions(true);
+	if (!enabledNonNormalFactions.empty())
+	{
+		enumerateLoadedModels([enabledNonNormalFactions](const std::string &modelName, iIMDShape &){
+			for (const auto& faction : enabledNonNormalFactions)
+			{
+				auto factionModel = getFactionModelName(faction, WzString::fromUtf8(modelName));
+				if (factionModel.has_value())
+				{
+					iIMDShape *retval = modelGet(factionModel.value());
+					ASSERT(retval != nullptr, "Cannot find the faction PIE model %s (for normal model: %s)",
+						   factionModel.value().toUtf8().c_str(), modelName.c_str());
+				}
+			}
+		});
+		resDoResLoadCallback();		// do callback.
+	}
+
 	if (psNewLevel->type == LEVEL_TYPE::LDS_CAMCHANGE)
 	{
 		if (!campaignReset())

@@ -26,6 +26,7 @@
 #include "intimage.h"
 #include "droid.h"
 #include "template.h"
+#include "research.h"
 
 
 /* Power levels are divided by this for power bar display. The extra factor has
@@ -99,23 +100,6 @@ void SetFormAudioIDs(int OpenID, int CloseID);
 // Initialise interface graphics.
 void intInitialiseGraphics();
 
-// callback to update the command droid size label
-void intUpdateCommandSize(WIDGET *psWidget, W_CONTEXT *psContext);
-
-// callback to update the command droid experience
-void intUpdateCommandExp(WIDGET *psWidget, W_CONTEXT *psContext);
-
-// callback to update the command droid factories
-void intUpdateCommandFact(WIDGET *psWidget, W_CONTEXT *psContext);
-
-void intUpdateProgressBar(WIDGET *psWidget, W_CONTEXT *psContext);
-
-void intUpdateQuantity(WIDGET *psWidget, W_CONTEXT *psContext);
-//callback to display the factory number
-void intAddFactoryInc(WIDGET *psWidget, W_CONTEXT *psContext);
-//callback to display the production quantity number for a template
-void intAddProdQuantity(WIDGET *psWidget, W_CONTEXT *psContext);
-
 /* Holds the cached rendered text for the power bar */
 struct DisplayPowerBarCache
 {
@@ -134,7 +118,6 @@ protected:
 	enum ButtonType {TOPBUTTON = 0, BTMBUTTON = 1};
 
 	void initDisplay();
-	void doneDisplay();
 	void displayClear(int xOffset, int yOffset);
 	void displayIMD(Image image, ImdObject imdObject, int xOffset, int yOffset);
 	void displayImage(Image image, int xOffset, int yOffset);
@@ -251,9 +234,10 @@ void intDisplayButtonHilight(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset);
 
 void intDisplayButtonFlash(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset);
 
-void intAddLoopQuantity(WIDGET *psWidget, W_CONTEXT *psContext);
-
 void intDisplayEditBox(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset);
+
+void formatTime(W_BARGRAPH *barGraph, int buildPointsDone, int buildPointsTotal, int buildRate, char const *toolTip);
+void formatPower(W_BARGRAPH *barGraph, int neededPower, int powerToBuild);
 
 bool DroidIsBuilding(DROID *Droid);
 STRUCTURE *DroidGetBuildStructure(DROID *Droid);
@@ -317,12 +301,10 @@ void intDisplayProximityBlips(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset);
 
 void intUpdateQuantitySlider(WIDGET *psWidget, W_CONTEXT *psContext);
 
-void intDisplayResSubGroup(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset);
-
 void intDisplayMissionClock(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset);
 
-void intDisplayAllyIcon(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset);
-void intDisplayAllyBar(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset);
+void intDisplayUpdateAllyBar(W_BARGRAPH *psBar, const RESEARCH &research, const std::vector<AllyResearch> &researches);
+STRUCTURE *droidGetCommandFactory(DROID *psDroid);
 
 void intSetShadowPower(int quantity);
 

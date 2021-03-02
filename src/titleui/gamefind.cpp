@@ -178,7 +178,7 @@ TITLECODE WzGameFindTitleUI::run()
 	{
 		UDWORD gameNumber = id - GAMES_GAMESTART;
 
-		std::vector<JoinConnectionDescription> connectionDesc = {JoinConnectionDescription(gamesList[gameNumber].desc.host, 0)};
+		std::vector<JoinConnectionDescription> connectionDesc = {JoinConnectionDescription(gamesList[gameNumber].desc.host, gamesList[gameNumber].hostPort)};
 		ActivityManager::instance().willAttemptToJoinLobbyGame(NETgetMasterserverName(), NETgetMasterserverPort(), gamesList[gameNumber].gameId, connectionDesc);
 
 		clearActiveConsole();
@@ -369,7 +369,6 @@ void WzGameFindTitleUI::addGames()
 		// display lobby message based on results.
 		// This is a 'button', not text so it can be hilighted/centered.
 		const char *txt;
-		W_BUTINIT sButInit;
 
 		switch (getLobbyError())
 		{
@@ -437,7 +436,7 @@ void WzGameFindTitleUI::addGames()
 
 		widgAddButton(psWScreen, &sButInit);
 	}
-	if (strlen(NetPlay.MOTD))
+	if (NetPlay.MOTD && strlen(NetPlay.MOTD))
 	{
 		permitNewConsoleMessages(true);
 		addConsoleMessage(NetPlay.MOTD, DEFAULT_JUSTIFY, SYSTEM_MESSAGE, false, MAX_CONSOLE_MESSAGE_DURATION);
@@ -554,10 +553,10 @@ void displayRemoteGame(WIDGET *psWidget, UDWORD xOffset, UDWORD yOffset)
 	if (strlen(gamesList[gameID].modlist))
 	{
 		// FIXME: we really don't have enough space to list all mods
-		char tmp[300];
-		ssprintf(tmp, _("Mods: %s"), gamesList[gameID].modlist);
-		tmp[StringSize] = '\0';
-		sstrcpy(name, tmp);
+		char tmpMods[300];
+		ssprintf(tmpMods, _("Mods: %s"), gamesList[gameID].modlist);
+		tmpMods[StringSize] = '\0';
+		sstrcpy(name, tmpMods);
 	}
 	else
 	{

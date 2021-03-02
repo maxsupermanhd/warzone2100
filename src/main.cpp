@@ -570,7 +570,8 @@ static void initialize_ConfigDir()
 	// Config dir first so we always see what we write
 	PHYSFS_mount(PHYSFS_getWriteDir(), NULL, PHYSFS_PREPEND);
 
-	PHYSFS_permitSymbolicLinks(1);
+	// Do not follow symlinks *inside* search paths / archives
+	PHYSFS_permitSymbolicLinks(0);
 
 	debug(LOG_WZ, "Write dir: %s", PHYSFS_getWriteDir());
 	debug(LOG_WZ, "Base dir: %s", PHYSFS_getBaseDir());
@@ -950,7 +951,7 @@ static bool initSaveGameLoad()
 {
 	// NOTE: always setGameMode correctly before *any* loading routines!
 	SetGameMode(GS_NORMAL);
-	screen_RestartBackDrop();
+	initLoadingScreen(true);
 
 	// load up a save game
 	if (!loadGameInit(saveGameName))

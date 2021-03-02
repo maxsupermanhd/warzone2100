@@ -755,8 +755,8 @@ static void saveMissionData()
 	mission.apsSensorList[0] = apsSensorList[0];
 	mission.apsOilList[0] = apsOilList[0];
 
-	mission.playerX = player.p.x;
-	mission.playerY = player.p.z;
+	mission.playerX = playerPos.p.x;
+	mission.playerY = playerPos.p.z;
 
 	//save the power settings
 	saveMissionPower();
@@ -1112,7 +1112,6 @@ bool startMissionOffClear(char *pGame)
 	}
 
 	offWorldKeepLists = false;
-	intResetPreviousObj();
 
 	// The message should have been played at the between stage
 	missionCountDown &= ~NOT_PLAYED_ACTIVATED;
@@ -1133,7 +1132,6 @@ bool startMissionOffKeep(char *pGame)
 	}
 
 	offWorldKeepLists = true;
-	intResetPreviousObj();
 
 	// The message should have been played at the between stage
 	missionCountDown &= ~NOT_PLAYED_ACTIVATED;
@@ -1182,7 +1180,6 @@ bool startMissionCampaignChange(char *pGame)
 	}
 
 	offWorldKeepLists = false;
-	intResetPreviousObj();
 
 	return true;
 }

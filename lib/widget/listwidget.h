@@ -114,7 +114,11 @@ public:
 	}
 	size_t pages() const
 	{
-		return myChildren.empty() ? 1 : ((myChildren.size() - 1) / widgetsPerPage()) + 1;
+		return numberOfPages;
+	}
+	size_t childrenSize() const
+	{
+		return myChildren.size();
 	}
 
 	/* The optional "onCurrentPageChanged" callback function */
@@ -153,7 +157,9 @@ private:
 	{
 		return childSize.height() + spacing.height();
 	}
+	void updateNumberOfPages();
 
+	size_t numberOfPages = 1;
 	WzSize childSize;
 	WzSize spacing;
 	size_t currentPage_;
@@ -199,6 +205,10 @@ public:
 	size_t pages() const
 	{
 		return widgets->pages();
+	}
+	size_t childrenSize() const
+	{
+		return widgets->childrenSize();
 	}
 
 	void setTabPosition(TabPosition pos);

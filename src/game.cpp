@@ -386,6 +386,15 @@ static bool serializeMultiplayerGame(PHYSFS_file *fileHandle, const MULTIPLAYERG
 		return false;
 	}
 
+	for (unsigned int i = 0; i < MAX_PLAYERS; ++i)
+	{
+		// dummy, was `skDiff` for each player
+		if (!PHYSFS_writeUBE8(fileHandle, 0))
+		{
+			return false;
+		}
+	}
+
 	return true;
 }
 
@@ -417,6 +426,15 @@ static bool deserializeMultiplayerGame(PHYSFS_file *fileHandle, MULTIPLAYERGAME 
 		return false;
 	}
 	challengeActive = dummy8;	// hack
+
+	for (unsigned int i = 0; i < MAX_PLAYERS; ++i)
+	{
+		// dummy, was `skDiff` for each player
+		if (!PHYSFS_readUBE8(fileHandle, &dummy8))
+		{
+			return false;
+		}
+	}
 
 	return true;
 }
@@ -1798,6 +1816,7 @@ static void allocatePlayers()
 	{
 		NetPlay.players[i].ai = saveGameData.sNetPlay.players[i].ai;
 		NetPlay.players[i].difficulty = saveGameData.sNetPlay.players[i].difficulty;
+//		NetPlay.players[i].faction; // read and initialized by loadMainFile
 		sstrcpy(NetPlay.players[i].name, saveGameData.sNetPlay.players[i].name);
 		NetPlay.players[i].position = saveGameData.sNetPlay.players[i].position;
 		if (NetPlay.players[i].difficulty == AIDifficulty::HUMAN || (game.type == LEVEL_TYPE::CAMPAIGN && i == 0))
@@ -3818,6 +3837,22 @@ static bool loadMainFile(const std::string &fileName)
 		builtInMap = save.value("builtInMap").toBool();
 	}
 
+	save.beginArray("players");
+	while (save.remainingArrayItems() > 0)
+	{
+		int index = save.value("index").toInt();
+		if (!(index >= 0 && index < MAX_PLAYERS))
+		{
+			debug(LOG_ERROR, "Invalid player index: %d", index);
+			save.nextArrayItem();
+			continue;
+		}
+		unsigned int FactionValue = save.value("faction", static_cast<uint8_t>(FACTION_NORMAL)).toUInt();
+		NetPlay.players[index].faction = static_cast<FactionID>(FactionValue);
+		save.nextArrayItem();
+	}
+	save.endArray();
+
 	return true;
 }
 
@@ -3834,6 +3869,12 @@ static bool loadMainFileFinal(const std::string &fileName)
 	while (save.remainingArrayItems() > 0)
 	{
 		int index = save.value("index").toInt();
+		if (!(index >= 0 && index < MAX_PLAYERS))
+		{
+			debug(LOG_ERROR, "Invalid player index: %d", index);
+			save.nextArrayItem();
+			continue;
+		}
 		auto value = save.value("recycled_droids").jsonValue();
 		for (const auto &v : value)
 		{
@@ -3925,6 +3966,7 @@ static bool writeMainFile(const std::string &fileName, SDWORD saveType)
 		save.setValue("position", NetPlay.players[i].position);
 		save.setValue("colour", NetPlay.players[i].colour);
 		save.setValue("allocated", NetPlay.players[i].allocated);
+		save.setValue("faction", NetPlay.players[i].faction);
 		save.setValue("team", NetPlay.players[i].team);
 		save.setValue("ai", NetPlay.players[i].ai);
 		save.setValue("autoGame", NetPlay.players[i].autoGame);
@@ -3935,10 +3977,10 @@ static bool writeMainFile(const std::string &fileName, SDWORD saveType)
 	}
 	save.endArray();
 
-	iView playerPos;
-	disp3d_getView(&playerPos);
-	save.setVector3i("camera_position", playerPos.p);
-	save.setVector3i("camera_rotation", playerPos.r);
+	iView currPlayerPos;
+	disp3d_getView(&currPlayerPos);
+	save.setVector3i("camera_position", currPlayerPos.p);
+	save.setVector3i("camera_rotation", currPlayerPos.r);
 
 	save.beginArray("landing_zones");
 	for (int i = 0; i < MAX_NOGO_AREAS; ++i)
@@ -4149,7 +4191,7 @@ static bool writeGameFile(const char *fileName, SDWORD saveType)
 	if (saveGame.sGame.type == LEVEL_TYPE::CAMPAIGN)
 	{
 		// player 0 is always a human in campaign games
-		for (int i = 1; i < MAX_PLAYERS; i++)
+		for (i = 1; i < MAX_PLAYERS; i++)
 		{
 			if (saveGame.sNetPlay.players[i].difficulty == AIDifficulty::HUMAN)
 			{
@@ -4398,9 +4440,9 @@ foundDroid:
 		getIniDroidOrder(ini, "order", psDroid->order);
 		psDroid->listSize = clip(ini.value("orderList/size", 0).toInt(), 0, 10000);
 		psDroid->asOrderList.resize(psDroid->listSize);  // Must resize before setting any orders, and must set in-place, since pointers are updated later.
-		for (int i = 0; i < psDroid->listSize; ++i)
+		for (int droidIdx = 0; droidIdx < psDroid->listSize; ++droidIdx)
 		{
-			getIniDroidOrder(ini, "orderList/" + WzString::number(i), psDroid->asOrderList[i]);
+			getIniDroidOrder(ini, "orderList/" + WzString::number(droidIdx), psDroid->asOrderList[droidIdx]);
 		}
 		psDroid->listPendingBegin = 0;
 		for (int j = 0; j < MAX_WEAPONS; j++)
@@ -5276,8 +5318,8 @@ static bool loadSaveStructure2(const char *pFileName, STRUCTURE **ppList)
 		//for modules - need to check the base structure exists
 		if (IsStatExpansionModule(psStats))
 		{
-			STRUCTURE *psStructure = getTileStructure(map_coord(pos.x), map_coord(pos.y));
-			if (psStructure == nullptr)
+			STRUCTURE *psTileStructure = getTileStructure(map_coord(pos.x), map_coord(pos.y));
+			if (psTileStructure == nullptr)
 			{
 				debug(LOG_ERROR, "No owning structure for module - %s for player - %d", name.toUtf8().c_str(), player);
 				ini.endGroup();
@@ -5333,7 +5375,7 @@ static bool loadSaveStructure2(const char *pFileName, STRUCTURE **ppList)
 			{
 				psModule = getModuleStat(psStructure);
 				//build the appropriate number of modules
-				for (int i = 0; i < capacity; i++)
+				for (int moduleIdx = 0; moduleIdx < capacity; moduleIdx++)
 				{
 					buildStructure(psModule, psStructure->pos.x, psStructure->pos.y, psStructure->player, true);
 				}
@@ -6636,10 +6678,10 @@ bool loadSaveMessage(const char* pFileName, LEVEL_TYPE levelType)
 
 						psMessage->pViewData = psViewData;
 						// Check the z value is at least the height of the terrain
-						const int height = map_Height(((VIEW_PROXIMITY*)psViewData->pData)->x, ((VIEW_PROXIMITY*)psViewData->pData)->y);
-						if (((VIEW_PROXIMITY*)psViewData->pData)->z < height)
+						const int terrainHeight = map_Height(((VIEW_PROXIMITY*)psViewData->pData)->x, ((VIEW_PROXIMITY*)psViewData->pData)->y);
+						if (((VIEW_PROXIMITY*)psViewData->pData)->z < terrainHeight)
 						{
-							((VIEW_PROXIMITY*)psViewData->pData)->z = height;
+							((VIEW_PROXIMITY*)psViewData->pData)->z = terrainHeight;
 						}
 					}
 					else

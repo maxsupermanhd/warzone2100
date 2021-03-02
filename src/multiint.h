@@ -32,6 +32,7 @@
 #include <vector>
 #include "lib/framework/wzstring.h"
 #include "titleui/multiplayer.h"
+#include "faction.h"
 
 #define MAX_LEN_AI_NAME   40
 #define AI_CUSTOM        127
@@ -265,6 +266,13 @@ void displayRoomNotifyMessage(char const *text);
 
 #define MULTIOP_DIFFICULTY_CHOOSE_START	(MULTIOP_DIFFICULTY_INIT_END + 1)
 #define MULTIOP_DIFFICULTY_CHOOSE_END	(MULTIOP_DIFFICULTY_CHOOSE_START + MAX_PLAYERS)
+
+#define MULTIOP_FACTION_START		(MULTIOP_DIFFICULTY_CHOOSE_END + 100000)
+#define MULTIOP_FACTION_END		(MULTIOP_FACTION_START + MAX_PLAYERS)
+#define MULTIOP_FACTION_WIDTH		31
+#define MULTIOP_FACCHOOSER		(MULTIOP_FACTION_END + 1)
+#define MULTIOP_FACCHOOSER_END		(MULTIOP_FACCHOOSER + NUM_FACTIONS)
+#define MULTIOP_FACCHOOSER_FORM		(MULTIOP_FACCHOOSER_END+1)
 
 
 // ///////////////////////////////
