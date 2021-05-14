@@ -110,6 +110,7 @@
 #include "faction.h"
 
 #include "activity.h"
+#include "stdinreader.h"
 #include <algorithm>
 
 #define MAP_PREVIEW_DISPLAY_TIME 2500	// number of milliseconds to show map in preview
@@ -249,6 +250,7 @@ static void stopJoining(std::shared_ptr<WzTitleUI> parent);
 static int difficultyIcon(int difficulty);
 
 static void sendRoomChatMessage(char const *text);
+void sendRoomNotifyMessage(char const *text);
 
 static int factionIcon(FactionID faction);
 
@@ -4337,6 +4339,38 @@ void WzMultiplayerOptionsTitleUI::frontendMultiMessages(bool running)
 					displayRoomMessage(buildMessage(message.sender, message.text));
 					audio_PlayTrack(FE_AUDIO_MESSAGEEND);
 				}
+				if(message.sender != SYSTEM_MESSAGE && message.sender != NOTIFY_MESSAGE) {
+					std::string senderhash = getMultiStats(NetPlay.players[message.sender].position).identity.publicHashStringFull();
+					std::string sendername = NetPlay.players[message.sender].name;
+					std::string sendername64 = base64Encode(std::vector<unsigned char>(sendername.begin(), sendername.end()));
+					std::string messagetext = message.text;
+					std::string messagetext64 = base64Encode(std::vector<unsigned char>(messagetext.begin(), messagetext.end()));
+					errlog("MH chat %s %s %s %s\n", NetPlay.players[message.sender].IPtextAddress, senderhash.c_str(), sendername64.c_str(), messagetext64.c_str());
+					debug(LOG_INFO, "message [%s] [%s]", senderhash.c_str(), message.text);
+					if(!strcmp(message.text, "!help")) {
+						sendRoomSystemMessage("Command list:");
+						sendRoomSystemMessage("!help - Get this message");
+						sendRoomSystemMessage("!admin - Get admin player profile hash");
+						sendRoomSystemMessage("!swap <p1> <p2> - Swap players [Admin only]");
+						sendRoomSystemMessage("!setadmin <hash>|<slot> - Change room admin to new hash or grab hash from a slot number [Admin only]");
+						sendRoomSystemMessage("Check bruh.software/wz/multihoster/help.php for complete list");
+					} else if(!strcmp(message.text, "!admin")) {
+						sendRoomSystemMessage((std::string("Admin is set to: ")+MHRoomAdminHashFull).c_str());
+					} else if(!strncmpl(message.text, "!swap")) {
+						int s1, s2;
+						int r = sscanf(message.text, "!swap %d %d", &s1, &s2);
+						if(r != 2) {
+							sendRoomNotifyMessage("Usage: !swap <player 1> <player 2>");
+						} else {
+							if(senderhash == MHRoomAdminHashFull) {
+								sendRoomSystemMessage((std::string("Swapping player ")+std::to_string(s1)+" and "+std::to_string(s2)).c_str());
+								changePosition(s1, s2);
+							} else {
+								sendRoomNotifyMessage("Only admin can use swap command!");
+							}
+						}
+					}
+				}
 			}
 			break;
 
@@ -5324,6 +5358,13 @@ static bool multiplayIsStartingGame()
 void sendRoomSystemMessage(char const *text)
 {
 	NetworkTextMessage message(SYSTEM_MESSAGE, text);
+	displayRoomSystemMessage(text);
+	message.enqueue(NETbroadcastQueue());
+}
+
+void sendRoomNotifyMessage(char const *text)
+{
+	NetworkTextMessage message(NOTIFY_MESSAGE, text);
 	displayRoomSystemMessage(text);
 	message.enqueue(NETbroadcastQueue());
 }

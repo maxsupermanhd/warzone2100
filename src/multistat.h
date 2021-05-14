@@ -28,6 +28,7 @@
 #include "lib/netplay/netplay.h"
 #include <3rdparty/json/json.hpp>
 #include <map>
+#include <string>
 
 struct PLAYERSTATS
 {
@@ -70,6 +71,7 @@ void updateMultiStatsKills(BASE_OBJECT *psKilled, UDWORD player);
 void recvMultiStats(NETQUEUE queue);
 void lookupRatingAsync(uint32_t playerIndex);
 
+std::string PublicKeyFromPlayer(uint32_t playerIndex);
 void initKnownPlayers();
 void shutdownKnownPlayers();
 bool isLocallyKnownPlayer(std::string const &name, EcKey const &key);

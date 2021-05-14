@@ -22,8 +22,6 @@
 #include <thread>
 #include <chrono>
 
-#define NULLBACKEND_VSYNC_MAX_FPS 120
-
 const auto minFrameDuration = std::chrono::nanoseconds(1000000000) / NULLBACKEND_VSYNC_MAX_FPS;
 
 sdl_Null_Impl::sdl_Null_Impl()

@@ -87,6 +87,7 @@ public:
 	static EcKey generate();
 
 	std::string publicHashString() const;
+	std::string publicHashStringFull() const;
 
 private:
 	void *vKey;

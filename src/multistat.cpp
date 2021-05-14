@@ -93,7 +93,7 @@ void lookupRatingAsync(uint32_t playerIndex)
 		return;
 	}
 
-	auto hash = playerStats[playerIndex].identity.publicHashString();
+	auto hash = playerStats[playerIndex].identity.publicHashStringFull();
 	if (hash.empty())
 	{
 		return;
@@ -647,5 +647,13 @@ uint32_t getSelectedPlayerUnitsKilled()
 	else
 	{
 		return missionData.unitsKilled;
+	}
+}
+
+std::string PublicKeyFromPlayer(uint32_t playerIndex) {
+	if(!playerStats[playerIndex].identity.empty()) {
+		return base64Encode(playerStats[playerIndex].identity.toBytes(EcKey::Public));
+	} else {
+		return "[no key]";
 	}
 }

@@ -423,6 +423,12 @@ std::string EcKey::publicHashString() const
 	return bytes.empty()? std::string{} : sha256Sum(&bytes[0], bytes.size()).toString().substr(0, 20).c_str();
 }
 
+std::string EcKey::publicHashStringFull() const
+{
+	auto bytes = toBytes(EcKey::Public);
+	return bytes.empty()? std::string{} : sha256Sum(&bytes[0], bytes.size()).toString().c_str();
+}
+
 
 //================================================================================
 // MARK: - Base64

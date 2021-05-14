@@ -84,6 +84,8 @@
 #include "notifications.h"
 #include "scores.h"
 #include "clparse.h"
+#include "multiint.h" // for kickPlayer
+#include "chat.h"
 
 #include "warzoneconfig.h"
 
@@ -125,13 +127,70 @@ static unsigned numConstructorDroids[MAX_PLAYERS];
 
 static SDWORD videoMode = 0;
 
+int LagCounter[MAX_PLAYERS] = {0};
+int LagDelay = 0;
+
 LOOP_MISSION_STATE		loopMissionState = LMS_NORMAL;
 
 // this is set by scrStartMission to say what type of new level is to be started
 LEVEL_TYPE nextMissionType = LEVEL_TYPE::LDS_NONE;
 
+static void sendTextMessage(char* msg, bool) {
+	auto message = InGameChatMessage(selectedPlayer, msg);
+	message.send();
+}
+
 static GAMECODE renderLoop()
 {
+	if(LagDelay == 0) {
+		LagDelay = 120;
+		for(int i=0; i<MAX_PLAYERS; i++) {
+			fflush(stdout);
+			if(ingame.PingTimes[i] >= PING_LIMIT) {
+				LagCounter[i]++;
+				if(LagCounter[i] == 15) { // should be 15 seconds
+					char msg[256] = {'\0'};
+					ssprintf(msg, "Auto-kicking player %d in 45 seconds.", i);
+					sendTextMessage(msg, true);
+				} else if(LagCounter[i] == 30) { // should be 30 seconds
+					char msg[256] = {'\0'};
+					ssprintf(msg, "Auto-kicking player %d in 30 seconds.", i);
+					sendTextMessage(msg, true);
+				} else if(LagCounter[i] == 45) { // should be 45 seconds
+					char msg[256] = {'\0'};
+					ssprintf(msg, "Auto-kicking player %d in 15 seconds.", i);
+					sendTextMessage(msg, true);
+				} else if(LagCounter[i] == 60-3) { // should be -3 seconds
+					char msg[256] = {'\0'};
+					ssprintf(msg, "Auto-kicking player %d in 3 seconds.", i);
+					sendTextMessage(msg, true);
+				} else if(LagCounter[i] == 60-2) { // should be -2 seconds
+					char msg[256] = {'\0'};
+					ssprintf(msg, "Auto-kicking player %d in 2 seconds.", i);
+					sendTextMessage(msg, true);
+				} else if(LagCounter[i] == 60-1) { // should be -1 seconds
+					char msg[256] = {'\0'};
+					ssprintf(msg, "Auto-kicking player %d in 1 seconds.", i);
+					sendTextMessage(msg, true);
+				} else if(LagCounter[i] == 60) { // 1 minute with 60 fps
+					char msg[256] = {'\0'};
+					ssprintf(msg, "Auto-kicking player %d because of ping issues.", i);
+					sendTextMessage(msg, true);
+					kickPlayer(i, "Your connetion was too laggy.", ERROR_CONNECTION);
+					printf("KICKED %d\n", i);
+					fflush(stdout);
+					LagCounter[i] = 0;
+				}
+			} else {
+				if(LagCounter[i] > 0) {
+					LagCounter[i]--;
+				}
+			}
+		}
+	} else {
+		LagDelay--;
+	}
+
 	if (bMultiPlayer && !NetPlay.isHostAlive && NetPlay.bComms && !NetPlay.isHost)
 	{
 		intAddInGamePopup();

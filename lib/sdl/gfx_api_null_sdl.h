@@ -26,6 +26,8 @@
 #include <SDL_video.h>
 #include <chrono>
 
+#define NULLBACKEND_VSYNC_MAX_FPS 120
+
 class sdl_Null_Impl final : public gfx_api::backend_Null_Impl
 {
 public:
