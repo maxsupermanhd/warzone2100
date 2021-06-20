@@ -1432,6 +1432,16 @@ int32_t wzapi::playerPower(WZAPI_PARAMS(int player))
 	return getPower(player);
 }
 
+//-- ## playerPower(player)
+//--
+//-- Return score of a given player.
+//--
+int32_t wzapi::playerScore(WZAPI_PARAMS(int player))
+{
+	SCRIPT_ASSERT_PLAYER(-1, context, player);
+	return getMultiStats(player).recentScore;
+}
+
 //-- ## queuedPower(player)
 //--
 //-- Return amount of power queued up for production by the given player. (3.2+ only)
