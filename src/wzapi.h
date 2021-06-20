@@ -997,6 +997,7 @@ namespace wzapi
 	int32_t distBetweenTwoPoints(WZAPI_PARAMS(int32_t x1, int32_t y1, int32_t x2, int32_t y2));
 	bool orderDroidLoc(WZAPI_PARAMS(DROID *psDroid, int order_, int x, int y));
 	int32_t playerPower(WZAPI_PARAMS(int player));
+	int32_t playerScore(WZAPI_PARAMS(int player));
 	int queuedPower(WZAPI_PARAMS(int player));
 	bool isStructureAvailable(WZAPI_PARAMS(std::string structName, optional<int> _player));
 	optional<scr_position> pickStructLocation(WZAPI_PARAMS(const DROID *psDroid, std::string statName, int startX, int startY, optional<int> _maxBlockingTiles));

@@ -3093,6 +3093,7 @@ IMPL_JS_FUNC(makeComponentAvailable, wzapi::makeComponentAvailable)
 IMPL_JS_FUNC(allianceExistsBetween, wzapi::allianceExistsBetween)
 IMPL_JS_FUNC(translate, wzapi::translate)
 IMPL_JS_FUNC(playerPower, wzapi::playerPower)
+IMPL_JS_FUNC(playerScore, wzapi::playerScore)
 IMPL_JS_FUNC(queuedPower, wzapi::queuedPower)
 IMPL_JS_FUNC(isStructureAvailable, wzapi::isStructureAvailable)
 IMPL_JS_FUNC(isVTOL, wzapi::isVTOL)
@@ -3379,6 +3380,7 @@ bool quickjs_scripting_instance::registerFunctions(const std::string& scriptName
 	JS_REGISTER_FUNC(groupSize, 1); // scripting_engine
 	JS_REGISTER_FUNC(orderDroidLoc, 4); // WZAPI
 	JS_REGISTER_FUNC(playerPower, 1); // WZAPI
+	JS_REGISTER_FUNC(playerScore, 1); // WZAPI
 	JS_REGISTER_FUNC(queuedPower, 1); // WZAPI
 	JS_REGISTER_FUNC2(isStructureAvailable, 1, 2); // WZAPI
 	JS_REGISTER_FUNC2(pickStructLocation, 4, 5); // WZAPI
