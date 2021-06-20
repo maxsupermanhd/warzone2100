@@ -84,6 +84,8 @@
 #include "notifications.h"
 #include "scores.h"
 #include "clparse.h"
+#include "multiint.h" // for kick
+#include "chat.h" // for InGameChatMessage
 
 #include "warzoneconfig.h"
 
@@ -92,6 +94,7 @@
 #endif
 
 #include <numeric>
+#include <sys/time.h>
 
 
 /*
@@ -129,6 +132,77 @@ LOOP_MISSION_STATE		loopMissionState = LMS_NORMAL;
 
 // this is set by scrStartMission to say what type of new level is to be started
 LEVEL_TYPE nextMissionType = LEVEL_TYPE::LDS_NONE;
+
+int LagCounter[MAX_PLAYERS] = {0};
+long long LagLast = 0;
+
+//https://stackoverflow.com/a/44896326/8889762
+static long long timeInMilliseconds(void) {
+	struct timeval tv;
+	gettimeofday(&tv,NULL);
+	return (((long long)tv.tv_sec)*1000)+(tv.tv_usec/1000);
+}
+
+static void sendTextMessage(char* msg, bool) {
+	auto message = InGameChatMessage(selectedPlayer, msg);
+	message.send();
+}
+
+static void kickRoutine() {
+	if(LagLast+1000 <= timeInMilliseconds()) {
+		LagLast = timeInMilliseconds();
+		for(int i=0; i<MAX_PLAYERS; i++) {
+			if(ingame.PingTimes[i] >= PING_LIMIT) {
+				LagCounter[i]++;
+				fprintf(stderr, "Player %d: lag %d\n", i, LagCounter[i]);
+				if(LagCounter[i] == 15) { // should be 15 seconds
+					char msg[256] = {'\0'};
+					ssprintf(msg, "Auto-kicking player %d in 45 seconds.", i);
+					debug(LOG_INFO, "%s", msg);
+					sendTextMessage(msg, true);
+				} else if(LagCounter[i] == 30) { // should be 30 seconds
+					char msg[256] = {'\0'};
+					ssprintf(msg, "Auto-kicking player %d in 30 seconds.", i);
+					debug(LOG_INFO, "%s", msg);
+					sendTextMessage(msg, true);
+				} else if(LagCounter[i] == 45) { // should be 45 seconds
+					char msg[256] = {'\0'};
+					ssprintf(msg, "Auto-kicking player %d in 15 seconds.", i);
+					debug(LOG_INFO, "%s", msg);
+					sendTextMessage(msg, true);
+				} else if(LagCounter[i] == 60-3) { // should be -3 seconds
+					char msg[256] = {'\0'};
+					ssprintf(msg, "Auto-kicking player %d in 3 seconds.", i);
+					debug(LOG_INFO, "%s", msg);
+					sendTextMessage(msg, true);
+				} else if(LagCounter[i] == 60-2) { // should be -2 seconds
+					char msg[256] = {'\0'};
+					ssprintf(msg, "Auto-kicking player %d in 2 seconds.", i);
+					debug(LOG_INFO, "%s", msg);
+					sendTextMessage(msg, true);
+				} else if(LagCounter[i] == 60-1) { // should be -1 seconds
+					char msg[256] = {'\0'};
+					ssprintf(msg, "Auto-kicking player %d in 1 seconds.", i);
+					debug(LOG_INFO, "%s", msg);
+					sendTextMessage(msg, true);
+				} else if(LagCounter[i] == 60) { // 1 minute with 60 fps
+					char msg[256] = {'\0'};
+					ssprintf(msg, "Auto-kicking player %d because of ping issues.", i);
+					debug(LOG_INFO, "%s", msg);
+					sendTextMessage(msg, true);
+					kickPlayer(i, "Your connetion was too laggy.", ERROR_CONNECTION);
+					fprintf(stderr, "KICKED %d\n", i);
+					LagCounter[i] = 0;
+				}
+			} else {
+				if(LagCounter[i] > 0) {
+					LagCounter[i]--;
+				}
+			}
+		}
+		fflush(stdout);
+	}
+}
 
 static GAMECODE renderLoop()
 {
@@ -621,6 +695,7 @@ GAMECODE gameLoop()
 		// Receive NET_BLAH messages.
 		// Receive GAME_BLAH messages, and if it's time, process exactly as many GAME_BLAH messages as required to be able to tick the gameTime.
 		recvMessage();
+		kickRoutine();
 
 		// Update gameTime and graphicsTime, and corresponding deltas. Note that gameTime and graphicsTime pause, if we aren't getting our GAME_GAME_TIME messages.
 		gameTimeUpdate(renderBudget > 0 || previousUpdateWasRender);
