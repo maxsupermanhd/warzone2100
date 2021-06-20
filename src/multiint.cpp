@@ -110,6 +110,7 @@
 #include "faction.h"
 
 #include "activity.h"
+#include "stdinreader.h"
 #include <algorithm>
 
 #define MAP_PREVIEW_DISPLAY_TIME 2500	// number of milliseconds to show map in preview
@@ -149,6 +150,8 @@
 extern char	MultiCustomMapsPath[PATH_MAX];
 extern char	MultiPlayersPath[PATH_MAX];
 extern bool bSendingMap;			// used to indicate we are sending a map
+
+void sendRoomNotifyMessage(char const *text);
 
 enum RoomMessageType {
 	RoomMessagePlayer,
@@ -5474,6 +5477,13 @@ static bool multiplayIsStartingGame()
 void sendRoomSystemMessage(char const *text)
 {
 	NetworkTextMessage message(SYSTEM_MESSAGE, text);
+	displayRoomSystemMessage(text);
+	message.enqueue(NETbroadcastQueue());
+}
+
+void sendRoomNotifyMessage(char const *text)
+{
+	NetworkTextMessage message(NOTIFY_MESSAGE, text);
 	displayRoomSystemMessage(text);
 	message.enqueue(NETbroadcastQueue());
 }
