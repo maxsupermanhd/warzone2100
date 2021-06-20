@@ -90,6 +90,7 @@
 #include <sodium.h>
 #include "updatemanager.h"
 #include "activity.h"
+#include "stdinreader.h"
 #if defined(ENABLE_DISCORD)
 #include "integrations/wzdiscordrpc.h"
 #endif
@@ -1461,6 +1462,13 @@ int realmain(int argc, char *argv[])
 		}
 		fprintf(stdout, "--------------------------------------------------------------------------------------\n");
 		fflush(stdout);
+	}
+	
+	
+	// Launch stdin reading thread
+	{
+		WZ_THREAD* stdinThread = wzThreadCreate(stdinThreadFunc, nullptr);
+		wzThreadStart(stdinThread);
 	}
 
 	// Find out where to find the data
