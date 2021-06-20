@@ -4400,13 +4400,14 @@ void WzMultiplayerOptionsTitleUI::frontendMultiMessages(bool running)
 								if(isHashAdmin(senderhash)) {
 									if(s1 < 0 || s1 > 2) {
 										sendRoomNotifyMessage("Base level must be in [0, 2]");
+									} else {
+										sendRoomSystemMessage((std::string("Starting base set to ")+std::to_string(s1)).c_str());
+										game.base = s1;
+										resetReadyStatus(false);
+										sendOptions();
 									}
-									sendRoomSystemMessage((std::string("Starting base set to ")+std::to_string(s1)).c_str());
-									game.base = s1;
-									resetReadyStatus(false);
-									sendOptions();
 								} else {
-									sendRoomNotifyMessage("Only admin can use swap command!");
+									sendRoomNotifyMessage("Only admin can use base command!");
 								}
 							}
 						} else if(!strncmpl(message.text, "!alliance")) {
@@ -4417,20 +4418,41 @@ void WzMultiplayerOptionsTitleUI::frontendMultiMessages(bool running)
 							} else {
 								if(isHashAdmin(senderhash)) {
 									if(s1 < 0 || s1 > 3) {
-										sendRoomNotifyMessage("Base level must be in [0, 3]");
+										sendRoomNotifyMessage("Alliance type must be in [0, 3]");
+									} else {
+										sendRoomSystemMessage((std::string("Alliance type set to ")+std::to_string(s1)).c_str());
+										if(s1 == 3) {
+											s1 = 2;
+										} else if(s1 == 2) {
+											s1 = 3;
+										}
+										game.alliance = s1;
+										resetReadyStatus(false);
+										netPlayersUpdated = true;
+										sendOptions();
 									}
-									sendRoomSystemMessage((std::string("Alliance type set to ")+std::to_string(s1)).c_str());
-									if(s1 == 3) {
-										s1 = 2;
-									} else if(s1 == 2) {
-										s1 = 3;
-									}
-									game.alliance = s1;
-									resetReadyStatus(false);
-									netPlayersUpdated = true;
-									sendOptions();
 								} else {
-									sendRoomNotifyMessage("Only admin can use swap command!");
+									sendRoomNotifyMessage("Only admin can use alliance command!");
+								}
+							}
+						}else if(!strncmpl(message.text, "!scav")) {
+							int s1;
+							int r = sscanf(message.text, "!scav %d", &s1);
+							if(r != 1) {
+								sendRoomNotifyMessage("Usage: !scav <0/1>");
+							} else {
+								if(isHashAdmin(senderhash)) {
+									if(s1 < 0 || s1 > 1) {
+										sendRoomNotifyMessage("Scavs can be only turned on or off (0, 1)");
+									} else {
+										sendRoomSystemMessage((std::string("Scavangers set to ")+std::to_string(s1)).c_str());
+										game.scavengers = s1;
+										resetReadyStatus(false);
+										netPlayersUpdated = true;
+										sendOptions();
+									}
+								} else {
+									sendRoomNotifyMessage("Only admin can use scav command!");
 								}
 							}
 						}
