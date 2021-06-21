@@ -606,6 +606,8 @@ wzapi::scripting_instance* scripting_engine::loadPlayerScript(const WzString& pa
 	}
 	//== * ```mapName``` The name of the current map.
 	globalVars["mapName"] = game.map;
+	//== * ```mapHash``` The hash of the current map.
+	globalVars["mapHash"] = game.hash.toString();
 	//== * ```tilesetType``` The area name of the map.
 	std::string tilesetType("CUSTOM");
 	if (strcmp(tilesetDir, "texpages/tertilesc1hw") == 0)
