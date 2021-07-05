@@ -4440,6 +4440,11 @@ nlohmann::json wzapi::constructStaticPlayerData()
 	{
 		nlohmann::json vector = nlohmann::json::object();
 		vector["name"] = NetPlay.players[i].name;
+		if(!getMultiStats(i).identity.empty()) {
+			vector["hash"] = getMultiStats(i).identity.publicHashString(64);
+		} else {
+			vector["hash"] = "";
+		}
 		vector["difficulty"] = static_cast<int8_t>(NetPlay.players[i].difficulty);
 		vector["faction"] = NetPlay.players[i].faction;
 		vector["colour"] = NetPlay.players[i].colour;
