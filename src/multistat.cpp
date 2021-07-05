@@ -95,7 +95,7 @@ void lookupRatingAsync(uint32_t playerIndex)
 		return;
 	}
 
-	auto hash = playerStats[playerIndex].identity.publicHashString();
+	auto hash = playerStats[playerIndex].identity.publicHashString(64);
 	if (hash.empty())
 	{
 		return;
@@ -117,7 +117,7 @@ void lookupRatingAsync(uint32_t playerIndex)
 				debug(LOG_WARNING, "Failed to retrieve data from \"%s\", got [%ld].", url.c_str(), response.httpStatusCode());
 				return;
 			}
-			if (playerStats[playerIndex].identity.publicHashString() != hash)
+			if (playerStats[playerIndex].identity.publicHashString(64) != hash)
 			{
 				debug(LOG_WARNING, "Got data from \"%s\", but player is already gone.", url.c_str());
 				return;
