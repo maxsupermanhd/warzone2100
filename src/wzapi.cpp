@@ -75,6 +75,7 @@
 #include "order.h"
 #include "chat.h"
 #include "scores.h"
+#include "multistat.h"
 
 #include <list>
 
@@ -1431,6 +1432,16 @@ int32_t wzapi::playerPower(WZAPI_PARAMS(int player))
 {
 	SCRIPT_ASSERT_PLAYER(-1, context, player);
 	return getPower(player);
+}
+
+//-- ## playerPower(player)
+//--
+//-- Return score of a given player.
+//--
+int32_t wzapi::playerScore(WZAPI_PARAMS(int player))
+{
+	SCRIPT_ASSERT_PLAYER(-1, context, player);
+	return getMultiStats(player).recentScore;
 }
 
 //-- ## queuedPower(player)
