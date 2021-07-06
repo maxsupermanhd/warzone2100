@@ -4002,7 +4002,10 @@ void WzMultiplayerOptionsTitleUI::processMultiopWidgets(UDWORD id)
 void startMultiplayerGame()
 {
 	ASSERT_HOST_ONLY(return);
-
+	
+	fprintf(stderr, "MH startgame\n");
+	fflush(stderr);
+	
 	decideWRF();										// set up swrf & game.map
 	bMultiPlayer = true;
 	bMultiMessages = true;
