@@ -2653,6 +2653,9 @@ bool LobbyServerConnectionHandler::connect()
 
 	gamestruct.gameId = ntohl(gameId);
 	debug(LOG_NET, "Using game ID: %u", (unsigned int)gamestruct.gameId);
+	
+	printf("MH lobbyid %u\n", (unsigned int)gamestruct.gameId);
+	fflush(stdout);
 
 	// Register our game with the server
 	if (writeAll(rs_socket, "addg", sizeof("addg")) == SOCKET_ERROR
