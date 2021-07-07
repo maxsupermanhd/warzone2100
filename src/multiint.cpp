@@ -234,6 +234,8 @@ static bool multiplayIsStartingGame();
 // ////////////////////////////////////////////////////////////////////////////
 // map previews..
 
+bool AutoratingLookupEnabled = true;
+
 static const char *difficultyList[] = { N_("Easy"), N_("Medium"), N_("Hard"), N_("Insane") };
 static const AIDifficulty difficultyValue[] = { AIDifficulty::EASY, AIDifficulty::MEDIUM, AIDifficulty::HARD, AIDifficulty::INSANE };
 static struct
@@ -4345,11 +4347,13 @@ void WzMultiplayerOptionsTitleUI::frontendMultiMessages(bool running)
 									char rrrrrrr[512] = {0};
 									snprintf(rrrrrrr, 511, "Changed team to %d", s1);
 									sendRoomSystemMessage(std::string(rrrrrrr).c_str());
+									resetReadyStatus(false);
 								} else if(r == 2) {
 									changeTeam(posToNetPlayer(s2), s1);
 									char rrrrrrr[512] = {0};
 									snprintf(rrrrrrr, 511, "Changed player %d team to %d", posToNetPlayer(s1), s2);
 									sendRoomSystemMessage(std::string(rrrrrrr).c_str());
+									resetReadyStatus(false);
 								} else {
 									sendRoomNotifyMessage("Usage: !team <team> [position]");
 								}
@@ -4378,6 +4382,7 @@ void WzMultiplayerOptionsTitleUI::frontendMultiMessages(bool running)
 								} else {
 									sendRoomSystemMessage((std::string("Kicking player ")+std::string(NetPlay.players[k1].name)).c_str());
 									kickPlayer(k1, _("Administrator has kicked you from the game."), ERROR_KICKED);
+									resetReadyStatus(false);
 								}
 							}
 						} else if(!strncmpl(message.text, "!swap")) {
@@ -4390,6 +4395,7 @@ void WzMultiplayerOptionsTitleUI::frontendMultiMessages(bool running)
 								if(isHashAdmin(senderhash)) {
 									sendRoomSystemMessage((std::string("Swapping player ")+std::to_string(s1)+" and "+std::to_string(s2)).c_str());
 									changePosition(s1, s2);
+									resetReadyStatus(false);
 								} else {
 									sendRoomNotifyMessage("Only admin can use swap command!");
 								}
@@ -4438,7 +4444,7 @@ void WzMultiplayerOptionsTitleUI::frontendMultiMessages(bool running)
 									sendRoomNotifyMessage("Only admin can use alliance command!");
 								}
 							}
-						}else if(!strncmpl(message.text, "!scav")) {
+						} else if(!strncmpl(message.text, "!scav")) {
 							int s1;
 							int r = sscanf(message.text, "!scav %d", &s1);
 							if(r != 1) {
@@ -4456,6 +4462,36 @@ void WzMultiplayerOptionsTitleUI::frontendMultiMessages(bool running)
 									}
 								} else {
 									sendRoomNotifyMessage("Only admin can use scav command!");
+								}
+							}
+						} else if(!strncmpl(message.text, "!rating")) {
+							int s1;
+							int r = sscanf(message.text, "!rating %d", &s1);
+							if(r != 1) {
+								sendRoomNotifyMessage("Usage: !rating <0/1>");
+							} else {
+								if(isHashAdmin(senderhash)) {
+									if(s1 < 0 || s1 > 1) {
+										sendRoomNotifyMessage("Rating lookup can be only turned on or off (0, 1)");
+									} else {
+										sendRoomSystemMessage((std::string("Rating lookup set to ")+std::to_string(s1)).c_str());
+										AutoratingLookupEnabled = s1;
+										for(int pli = 0; pli < MAX_PLAYERS; pli++) {
+											if(selectedPlayer == pli) {
+												continue;
+											}
+											if(s1) {
+												lookupRatingAsync(pli);
+											} else {
+												PLAYERSTATS newstat = getMultiStats(pli);
+												newstat.autorating.valid = s1;
+												setMultiStats(pli, newstat, false);
+											}
+										}
+										sendRoomSystemMessage("Stats update done");
+									}
+								} else {
+									sendRoomNotifyMessage("Only admin can use rating command!");
 								}
 							}
 						}

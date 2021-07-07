@@ -38,6 +38,7 @@
 #include "mission.h" // for cheats
 #include "multistat.h"
 #include "urlrequest.h"
+#include "multiint.h"
 
 #include <utility>
 #include <memory>
@@ -104,6 +105,10 @@ void lookupRatingAsync(uint32_t playerIndex)
 	std::string url = autoratingUrl(hash);
 	if (url.empty())
 	{
+		return;
+	}
+	
+	if(!AutoratingLookupEnabled) {
 		return;
 	}
 
