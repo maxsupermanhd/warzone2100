@@ -96,6 +96,9 @@ void WzOldTitleUI::start()
 		bLimiterLoaded = false;
 	case SHOWINTRO:
 		break;
+	case CHANGELOG:
+		startChangelogMenu();
+		break;
 	default:
 		debug(LOG_FATAL, "Unknown title mode requested");
 		abort();
@@ -180,6 +183,10 @@ TITLECODE WzOldTitleUI::run()
 		pie_ScreenFlip(CLEAR_BLACK);
 		changeTitleMode(TITLE);
 		return TITLECODE_SHOWINTRO;
+		
+	case CHANGELOG:
+		runChangelogMenu();
+		break;
 
 	default:
 		debug(LOG_FATAL, "unknown title screen mode");

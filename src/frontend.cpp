@@ -78,6 +78,8 @@
 #include "game.h"
 #include "map.h" //for builtInMap
 #include "notifications.h"
+#include "urlrequest.h"
+#include "urlhelpers.h"
 
 // ////////////////////////////////////////////////////////////////////////////
 // Global variables
@@ -184,6 +186,7 @@ void startTitleMenu()
 	moveToParentRightEdge(pRightAlignedButton, 6);
 	widgSetTip(psWScreen, FRONTEND_CHATLINK, _("Connect to Discord or Freenode through webchat by clicking this link."));
 	addMultiBut(psWScreen, FRONTEND_BOTFORM, FRONTEND_UPGRDLINK, 7, 7, MULTIOP_BUTW, MULTIOP_BUTH, _("Check for a newer version"), IMAGE_GAMEVERSION, IMAGE_GAMEVERSION_HI, true);
+	addMultiBut(psWScreen, FRONTEND_BOTFORM, FRONTEND_CHANGELOG, 7+MULTIOP_BUTW+11, 8, MULTIOP_BUTW, MULTIOP_BUTH, _("View changelog"), IMAGE_CHANGELOG, IMAGE_CHANGELOG_HI, true);
 }
 
 static void runUpgrdHyperlink()
@@ -263,6 +266,9 @@ bool runTitleMenu()
 		runContinue();
 		changeTitleMode(LOADSAVEGAME);
 		break;
+	case FRONTEND_CHANGELOG:
+		changeTitleMode(CHANGELOG);
+		break;
 
 	default:
 		break;
@@ -273,6 +279,96 @@ bool runTitleMenu()
 	return true;
 }
 
+
+void startChangelogMenu()
+{
+	addBackdrop();
+	addTopForm(false);
+	addBottomForm();
+	
+	addSideText(FRONTEND_SIDETEXT , FRONTEND_SIDEX, FRONTEND_SIDEY, _("CHANGELOG"));
+	
+	WIDGET *parent = widgGetFromID(psWScreen, FRONTEND_BOTFORM);
+
+	auto scrollableList = ScrollableListWidget::make();
+	scrollableList->setGeometry(2, FRONTEND_POS2Y, FRONTEND_BOTFORMW - 2, FRONTEND_BOTFORMH - FRONTEND_POS2Y - 2);
+	
+	URLDataRequest req;
+	req.url = "https://raw.githubusercontent.com/Warzone2100/warzone2100/master/ChangeLog";
+	req.onSuccess = [&scrollableList](std::string const &url, HTTPResponseDetails const &response, std::shared_ptr<MemoryStruct> const &data) {
+		debug(LOG_INFO, "Gor resp");
+		wzAsyncExecOnMainThread([&scrollableList, url, response, data] {
+			if (response.httpStatusCode() != 200 || !data || data->size == 0)
+			{
+				char emsg[2048] = {0};
+				snprintf(emsg, 2047, "Failed to retrieve data from \"%s\", got [%ld].", url.c_str(), response.httpStatusCode());
+				debug(LOG_WARNING, "%s", emsg);
+				auto laaaab = std::make_shared<W_LABEL>();
+				laaaab->setFont(font_regular, WZCOL_FORM_TEXT);
+				laaaab->setString(emsg);
+				laaaab->setGeometry(0, 0, 10, std::max<int>(iV_GetTextLineSize(font_regular), 11));
+				scrollableList->addItem(laaaab);
+				return;
+			}
+			char* src = data->memory;
+			char* tk = strtok(src, "\n");
+			while(tk) {
+				std::string app(tk, strcspn(tk, "\n"));
+				auto laaaab = std::make_shared<W_LABEL>();
+				laaaab->setFont(font_regular, WZCOL_FORM_TEXT);
+				laaaab->setString(app.c_str());
+				laaaab->setGeometry(0, 0, 10, std::max<int>(iV_GetTextLineSize(font_regular), 11));
+				scrollableList->addItem(laaaab);
+				tk = strtok(NULL, "\n");
+			}
+		});
+	};
+	req.onFailure = [](std::string const &url, WZ_DECL_UNUSED URLRequestFailureType type, WZ_DECL_UNUSED optional<HTTPResponseDetails> transferDetails) {
+		debug(LOG_ERROR, "Failure fetching \"%s\". %d", url.c_str(), type);
+	};
+	req.maxDownloadSizeLimit = 4096;
+	urlRequestData(req);
+	
+	// for(int i=0; i<100; i++) {
+	// 	auto laaaab = std::make_shared<W_LABEL>();
+	// 	// panel->attach(panel->attachAItoPlayerLabel);
+	// 	laaaab->setFont(font_regular, WZCOL_FORM_TEXT);
+	// 	laaaab->setString("Attach AI to player:");
+	// 	laaaab->setGeometry(0, 0, 10, std::max<int>(iV_GetTextLineSize(font_regular), 11));
+	// 	scrollableList->addItem(laaaab);
+	// }
+
+	parent->attach(scrollableList);
+	
+	// TRANSLATORS: "Return", in this context, means "return to previous screen/menu"
+	addMultiBut(psWScreen, FRONTEND_BOTFORM, FRONTEND_QUIT, 10, 10, 30, 29, P_("menu", "Return"), IMAGE_RETURN, IMAGE_RETURN_HI, IMAGE_RETURN_HI);
+}
+
+bool runChangelogMenu()
+{
+	WidgetTriggers const &triggers = widgRunScreen(psWScreen);
+	unsigned id = triggers.empty() ? 0 : triggers.front().widget->id; // Just use first click here, since the next click could be on another menu.
+
+	switch (id)
+	{
+	case FRONTEND_QUIT:
+		changeTitleMode(TITLE);
+		break;
+
+	default:
+		break;
+	}
+
+	// If close button pressed then return from this menu.
+	if (CancelPressed())
+	{
+		changeTitleMode(TITLE);
+	}
+
+	widgDisplayScreen(psWScreen);						// show the widgets currently running
+
+	return true;
+}
 
 // ////////////////////////////////////////////////////////////////////////////
 // Tutorial Menu

@@ -46,6 +46,7 @@ enum tMode
 	MOUSE_OPTIONS,          // 16 mouse options menu
 	CAMPAIGNS,              // 17 campaign selector
 	MUSIC_MANAGER,			// 18 music manager
+	CHANGELOG,              // 19 changelog viewer
 };
 
 #define MAX_LEVEL_NAME_SIZE	(256)
@@ -62,6 +63,7 @@ bool runCampaignSelector();
 bool runMultiPlayerMenu();
 bool runGameOptionsMenu();
 bool runOptionsMenu();
+bool runChangelogMenu();
 bool runGraphicsOptionsMenu();
 bool runAudioAndZoomOptionsMenu();
 bool runVideoOptionsMenu();
@@ -74,6 +76,7 @@ void startSinglePlayerMenu();
 void startCampaignSelector();
 void startMultiPlayerMenu();
 void startOptionsMenu();
+void startChangelogMenu();
 void startGraphicsOptionsMenu();
 void startAudioAndZoomOptionsMenu();
 void startVideoOptionsMenu();
@@ -211,6 +214,7 @@ enum
 	FRONTEND_UPGRDLINK,
 	FRONTEND_DONATELINK,
 	FRONTEND_CHATLINK,
+	FRONTEND_CHANGELOG,
 	// begin menu
 	FRONTEND_SINGLEPLAYER	= 20100,	// title screen
 	FRONTEND_MULTIPLAYER,
