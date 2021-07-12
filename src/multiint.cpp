@@ -4001,8 +4001,8 @@ void startMultiplayerGame()
 {
 	ASSERT_HOST_ONLY(return);
 	
-	printf("MH startgame\n");
-	fflush(stdout);
+	fprintf(stderr, "MH startgame\n");
+	fflush(stderr);
 	
 	decideWRF();										// set up swrf & game.map
 	bMultiPlayer = true;
