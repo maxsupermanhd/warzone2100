@@ -862,7 +862,7 @@ bool ParseCommandLine(int argc, const char * const *argv)
 			{
 				qFatal("Bad start players count");
 			}
-			autostart_players = atoi(token)
+			autostart_players = atoi(token);
 			debug(LOG_INFO, "Games will automatically start with [%d] players", autostart_players);
 			break;
 		};
