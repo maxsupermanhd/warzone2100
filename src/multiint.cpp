@@ -4398,7 +4398,7 @@ void WzMultiplayerOptionsTitleUI::frontendMultiMessages(bool running)
 								int k1 = 0;
 								int r = sscanf(message.text, "!kick %d", &k1);
 								k1 = posToNetPlayer(k1);
-								if(r != 1 || k1<0 || k1>MAX_PLAYERS) {
+								if(r != 1 || k1<0 || k1>=MAX_PLAYERS) {
 									sendRoomNotifyMessage("Usage: !kick <slot>");
 								} else {
 									sendRoomSystemMessage((std::string("Kicking player ")+std::string(NetPlay.players[k1].name)).c_str());
