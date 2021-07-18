@@ -40,7 +40,7 @@ int stdinThreadFunc(void *) {
 				} else {
 					std::string newAdminStrCopy(newadmin);
 					wzAsyncExecOnMainThread([newAdminStrCopy]{
-						errlog("MH info Room admin set to %s.\n", newadmin);
+						errlog("MH info Room admin set to %s.\n", newAdminStrCopy.c_str());
 						stdinSetAdmin(newAdminStrCopy);
 						auto roomAdminMessage = astringf("Room admin assigned to: %s", newAdminStrCopy.c_str());
 						sendRoomSystemMessage(roomAdminMessage.c_str());
