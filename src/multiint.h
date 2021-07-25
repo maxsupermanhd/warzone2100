@@ -71,6 +71,7 @@ bool changeColour(unsigned player, int col, bool isHost);
 
 extern char sPlayer[128];
 extern bool multiintDisableLobbyRefresh; // gamefind
+extern bool AutoratingLookupEnabled;
 
 void kickPlayer(uint32_t player_id, const char *reason, LOBBY_ERROR_TYPES type);
 void displayKickReasonPopup(const std::string &reason);

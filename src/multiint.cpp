@@ -112,6 +112,7 @@
 #include "faction.h"
 
 #include "activity.h"
+#include "stdinreader.h"
 #include <algorithm>
 
 #define MAP_PREVIEW_DISPLAY_TIME 2500	// number of milliseconds to show map in preview
@@ -123,6 +124,8 @@
 extern char	MultiCustomMapsPath[PATH_MAX];
 extern char	MultiPlayersPath[PATH_MAX];
 extern bool bSendingMap;			// used to indicate we are sending a map
+
+void sendRoomNotifyMessage(char const *text);
 
 enum RoomMessageType {
 	RoomMessagePlayer,
@@ -230,6 +233,8 @@ static bool multiplayPlayersReady();
 static bool multiplayIsStartingGame();
 // ////////////////////////////////////////////////////////////////////////////
 // map previews..
+
+bool AutoratingLookupEnabled = true;
 
 static const char *difficultyList[] = { N_("Easy"), N_("Medium"), N_("Hard"), N_("Insane") };
 static const AIDifficulty difficultyValue[] = { AIDifficulty::EASY, AIDifficulty::MEDIUM, AIDifficulty::HARD, AIDifficulty::INSANE };
@@ -4306,6 +4311,190 @@ void WzMultiplayerOptionsTitleUI::frontendMultiMessages(bool running)
 				if (message.receive(queue)) {
 					displayRoomMessage(buildMessage(message.sender, message.text));
 					audio_PlayTrack(FE_AUDIO_MESSAGEEND);
+					if(message.sender != SYSTEM_MESSAGE && message.sender != NOTIFY_MESSAGE) {
+						auto posToNetPlayer = [](int a) {
+							for(int i=0; i<MAX_PLAYERS; i++) {
+								if(NetPlay.players[i].position == a) {
+									return i;
+								}
+							}
+							return a;
+						};
+						std::string senderhash = getMultiStats(message.sender).identity.publicHashString(64);
+						std::string sendername = NetPlay.players[message.sender].name;
+						std::string sendername64 = base64Encode(std::vector<unsigned char>(sendername.begin(), sendername.end()));
+						std::string messagetext = message.text;
+						std::string messagetext64 = base64Encode(std::vector<unsigned char>(messagetext.begin(), messagetext.end()));
+						errlog("sender %d position %d name %s\n", message.sender, NetPlay.players[message.sender].position, NetPlay.players[message.sender].name)
+						errlog("MH chat %s %s %s %s\n", NetPlay.players[message.sender].IPtextAddress, senderhash.c_str(), sendername64.c_str(), messagetext64.c_str());
+						debug(LOG_INFO, "message [%s] [%s]", senderhash.c_str(), message.text);
+						if(!strcmp(message.text, "!help")) {
+							sendRoomSystemMessage("Command list:");
+							sendRoomSystemMessage("!help - Get this message");
+							sendRoomSystemMessage("!admin - Get admin player profile hash");
+							sendRoomSystemMessage("!swap <p1> <p2> - Swap players [Admin only]");
+							sendRoomSystemMessage("!team <p1> <p2> - change team of slots [Admin only]");
+							sendRoomSystemMessage("Check tacticalpepe.me/autohoster for complete list");
+						} else if(!strcmp(message.text, "!admin")) {
+							sendRoomSystemMessage((std::string("Admin is set to: ")+stdinGetAdmin()).c_str());
+						} else if(!strncmpl(message.text, "!team")) {
+							int s1 = 0, s2 = 0;
+							int r = sscanf(message.text, "!team %d %d", &s1, &s2);
+							if(isHashAdmin(senderhash)) {
+								if(r == 1) {
+									changeTeam(message.sender, s1);
+									char rrrrrrr[512] = {0};
+									snprintf(rrrrrrr, 511, "Changed team to %d", s1);
+									sendRoomSystemMessage(std::string(rrrrrrr).c_str());
+									resetReadyStatus(false);
+								} else if(r == 2) {
+									changeTeam(posToNetPlayer(s2), s1);
+									char rrrrrrr[512] = {0};
+									snprintf(rrrrrrr, 511, "Changed player %d team to %d", posToNetPlayer(s1), s2);
+									sendRoomSystemMessage(std::string(rrrrrrr).c_str());
+									resetReadyStatus(false);
+								} else {
+									sendRoomNotifyMessage("Usage: !team <team> [position]");
+								}
+							}
+						} else if(!strcmp(message.text, "!hostexit")) {
+							if(isHashAdmin(senderhash)) {
+								exit(5);
+							} else {
+								sendRoomNotifyMessage("Only admin can use hostexit command!");
+							}
+						} else if(!strcmp(message.text, "!me")) {
+							char msgggg[1024] = {0};
+							snprintf(msgggg, 1023, "hash: %12s sender [%d] position [%d] name [%s]",
+													senderhash.c_str(),
+													message.sender,
+													NetPlay.players[message.sender].position,
+													NetPlay.players[message.sender].name);
+							sendRoomSystemMessage(msgggg);
+						} else if(!strncmpl(message.text, "!kick")) {
+							if(isHashAdmin(senderhash)) {
+								int k1 = 0;
+								int r = sscanf(message.text, "!kick %d", &k1);
+								k1 = posToNetPlayer(k1);
+								if(r != 1 || k1<0 || k1>MAX_PLAYERS) {
+									sendRoomNotifyMessage("Usage: !kick <slot>");
+								} else {
+									sendRoomSystemMessage((std::string("Kicking player ")+std::string(NetPlay.players[k1].name)).c_str());
+									kickPlayer(k1, _("Administrator has kicked you from the game."), ERROR_KICKED);
+									resetReadyStatus(false);
+								}
+							}
+						} else if(!strncmpl(message.text, "!swap")) {
+							int s1, s2;
+							int r = sscanf(message.text, "!swap %d %d", &s1, &s2);
+							s1 = posToNetPlayer(s1);
+							if(r != 2) {
+								sendRoomNotifyMessage("Usage: !swap <player 1> <player 2>");
+							} else {
+								if(isHashAdmin(senderhash)) {
+									sendRoomSystemMessage((std::string("Swapping player ")+std::to_string(s1)+" and "+std::to_string(s2)).c_str());
+									changePosition(s1, s2);
+									resetReadyStatus(false);
+								} else {
+									sendRoomNotifyMessage("Only admin can use swap command!");
+								}
+							}
+						} else if(!strncmpl(message.text, "!base")) {
+							int s1;
+							int r = sscanf(message.text, "!base %d", &s1);
+							if(r != 1) {
+								sendRoomNotifyMessage("Usage: !base <base level>");
+							} else {
+								if(isHashAdmin(senderhash)) {
+									if(s1 < 0 || s1 > 2) {
+										sendRoomNotifyMessage("Base level must be in [0, 2]");
+									} else {
+										sendRoomSystemMessage((std::string("Starting base set to ")+std::to_string(s1)).c_str());
+										game.base = s1;
+										resetReadyStatus(false);
+										sendOptions();
+									}
+								} else {
+									sendRoomNotifyMessage("Only admin can use base command!");
+								}
+							}
+						} else if(!strncmpl(message.text, "!alliance")) {
+							int s1;
+							int r = sscanf(message.text, "!alliance %d", &s1);
+							if(r != 1) {
+								sendRoomNotifyMessage("Usage: !alliance <alliance type>");
+							} else {
+								if(isHashAdmin(senderhash)) {
+									if(s1 < 0 || s1 > 3) {
+										sendRoomNotifyMessage("Alliance type must be in [0, 3]");
+									} else {
+										sendRoomSystemMessage((std::string("Alliance type set to ")+std::to_string(s1)).c_str());
+										if(s1 == 3) {
+											s1 = 2;
+										} else if(s1 == 2) {
+											s1 = 3;
+										}
+										game.alliance = s1;
+										resetReadyStatus(false);
+										netPlayersUpdated = true;
+										sendOptions();
+									}
+								} else {
+									sendRoomNotifyMessage("Only admin can use alliance command!");
+								}
+							}
+						} else if(!strncmpl(message.text, "!scav")) {
+							int s1;
+							int r = sscanf(message.text, "!scav %d", &s1);
+							if(r != 1) {
+								sendRoomNotifyMessage("Usage: !scav <0/1>");
+							} else {
+								if(isHashAdmin(senderhash)) {
+									if(s1 < 0 || s1 > 1) {
+										sendRoomNotifyMessage("Scavs can be only turned on or off (0, 1)");
+									} else {
+										sendRoomSystemMessage((std::string("Scavangers set to ")+std::to_string(s1)).c_str());
+										game.scavengers = s1;
+										resetReadyStatus(false);
+										netPlayersUpdated = true;
+										sendOptions();
+									}
+								} else {
+									sendRoomNotifyMessage("Only admin can use scav command!");
+								}
+							}
+						} else if(!strncmpl(message.text, "!rating")) {
+							int s1;
+							int r = sscanf(message.text, "!rating %d", &s1);
+							if(r != 1) {
+								sendRoomNotifyMessage("Usage: !rating <0/1>");
+							} else {
+								if(isHashAdmin(senderhash)) {
+									if(s1 < 0 || s1 > 1) {
+										sendRoomNotifyMessage("Rating lookup can be only turned on or off (0, 1)");
+									} else {
+										sendRoomSystemMessage((std::string("Rating lookup set to ")+std::to_string(s1)).c_str());
+										AutoratingLookupEnabled = s1;
+										for(int pli = 0; pli < MAX_PLAYERS; pli++) {
+											if(selectedPlayer == pli) {
+												continue;
+											}
+											if(s1) {
+												lookupRatingAsync(pli);
+											} else {
+												PLAYERSTATS newstat = getMultiStats(pli);
+												newstat.autorating.valid = s1;
+												setMultiStats(pli, newstat, false);
+											}
+										}
+										sendRoomSystemMessage("Stats update done");
+									}
+								} else {
+									sendRoomNotifyMessage("Only admin can use rating command!");
+								}
+							}
+						}
+					}
 				}
 			}
 			break;
@@ -5295,6 +5484,13 @@ static bool multiplayIsStartingGame()
 void sendRoomSystemMessage(char const *text)
 {
 	NetworkTextMessage message(SYSTEM_MESSAGE, text);
+	displayRoomSystemMessage(text);
+	message.enqueue(NETbroadcastQueue());
+}
+
+void sendRoomNotifyMessage(char const *text)
+{
+	NetworkTextMessage message(NOTIFY_MESSAGE, text);
 	displayRoomSystemMessage(text);
 	message.enqueue(NETbroadcastQueue());
 }
