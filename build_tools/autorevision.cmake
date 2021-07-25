@@ -706,6 +706,8 @@ elseif(Git_FOUND AND _currentDirectoryIsInGitRepo)
 			math(EXPR VCS_TAG_TAG_COUNT "${_ordered_annotated_tags_count} - ${_index_of_tag}")
 		endif()
 	endif()
+	set(VCS_TAG_TAG_COUNT "61")
+	set(VCS_MOST_RECENT_TAGGED_VERSION_TAG_COUNT "61")
 elseif(EXISTS "${CACHEFILE}")
 	# We are not in a repo; try to use a previously generated cache to populate our symbols.
 	_importCache("${CACHEFILE}" ${LOGGING_QUIET})
