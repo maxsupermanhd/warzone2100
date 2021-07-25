@@ -28,6 +28,7 @@
 bool ParseCommandLine(int argc, const char * const *argv);
 bool ParseCommandLineEarly(int argc, const char * const *argv);
 
+int AutostartPlayerCount();
 bool autogame_enabled();
 const std::string &saveandquit_enabled();
 const std::string &wz_skirmish_test();
