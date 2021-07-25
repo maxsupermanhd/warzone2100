@@ -4155,7 +4155,28 @@ void WzMultiplayerOptionsTitleUI::frontendMultiMessages(bool running)
 			// If hosting and game not yet started, try to start the game if everyone is ready.
 			if (NetPlay.isHost && multiplayPlayersReady())
 			{
-				startMultiplayerGame();
+				bool allow_start = true;
+				if(AutostartPlayerCount() != -1) {
+					int players_present = 0;
+					for(int i=0; i<AutostartPlayerCount(); i++) {
+						for(int j=0; j<MAX_PLAYERS; j++) {
+							if(!NetPlay.players[j].allocated) {
+								continue;
+							}
+							if(NetPlay.players[j].position == i) {
+								players_present++;
+							}
+						}
+					}
+					if(players_present < AutostartPlayerCount()) {
+						allow_start = false;
+					}
+				}
+				if(allow_start) {
+					startMultiplayerGame();
+				} else {
+					sendRoomSystemMessage("Game will not start until it is full.");
+				}
 			}
 			break;
 
