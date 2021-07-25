@@ -1657,11 +1657,6 @@ int realmain(int argc, char *argv[])
 	}
 	
 	
-	// Launch stdin reading thread
-	{
-		WZ_THREAD* stdinThread = wzThreadCreate(stdinThreadFunc, nullptr);
-		wzThreadStart(stdinThread);
-	}
 
 	// Find out where to find the data
 	scanDataDirs();
@@ -1753,6 +1748,12 @@ int realmain(int argc, char *argv[])
 	}
 
 	initializeCrashHandlingContext(gfxbackend);
+
+	// Launch stdin reading thread
+	{
+		WZ_THREAD* stdinThread = wzThreadCreate(stdinThreadFunc, nullptr);
+		wzThreadStart(stdinThread);
+	}
 
 	debug(LOG_WZ, "Warzone 2100 - %s", version_getFormattedVersionString(false));
 	debug(LOG_WZ, "Using language: %s", getLanguage());

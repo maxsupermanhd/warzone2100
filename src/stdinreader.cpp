@@ -34,13 +34,17 @@ int stdinThreadFunc(void *) {
 				inexit = true;
 			} else if(!strncmpl(line, "admin set ")) {
 				char newadmin[1024] = {0};
-				int r = sscanf(line, "admin set %1023s", newadmin);
+				int r = sscanf(line, "admin set %1023[^\n]s", newadmin);
 				if(r != 1) {
 					errlog("MH info Failed to set room admin hash!!!!\n");
 				} else {
-					errlog("MH info Room admin set to %s.\n", newadmin);
-					stdinSetAdmin(newadmin);
-					sendRoomSystemMessage(("Room admin assigned to: "+std::string(newadmin)).c_str());
+					std::string newAdminStrCopy(newadmin);
+					wzAsyncExecOnMainThread([newAdminStrCopy]{
+						errlog("MH info Room admin set to %s.\n", newAdminStrCopy.c_str());
+						stdinSetAdmin(newAdminStrCopy);
+						auto roomAdminMessage = astringf("Room admin assigned to: %s", newAdminStrCopy.c_str());
+						sendRoomSystemMessage(roomAdminMessage.c_str());
+					});
 				}
 			}
 		}
