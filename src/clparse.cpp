@@ -76,6 +76,7 @@ typedef struct _poptContext
 #undef qFatal
 #define qFatal(...) { fprintf(stderr, __VA_ARGS__); fprintf(stderr, "\n"); exit(1); }
 
+int autostart_players = -1;
 /// Enable automatic test games
 static bool wz_autogame = false;
 static std::string wz_saveandquit;
@@ -332,6 +333,7 @@ typedef enum
 #endif
 	CLI_GAMEPORT,
 	CLI_WZ_CRASH_RPT,
+	CLI_STARTPLAYERS,
 } CLI_OPTIONS;
 
 static const struct poptOption *getOptionsTable()
@@ -392,6 +394,7 @@ static const struct poptOption *getOptionsTable()
 #endif
 		{ "gameport", POPT_ARG_STRING, CLI_GAMEPORT,   N_("Set game server port"), N_("port") },
 		{ "wz-crash-rpt", POPT_ARG_NONE, CLI_WZ_CRASH_RPT, nullptr, nullptr },
+		{ "startplayers", POPT_ARG_STRING, CLI_STARTPLAYERS,   N_("Minimum required players to auto start game"), N_("startplayers") },
 		// Terminating entry
 		{ nullptr, 0, 0,              nullptr,                                    nullptr },
 	};
@@ -859,10 +862,23 @@ bool ParseCommandLine(int argc, const char * const *argv)
 			netGameserverPortOverride = true;
 			debug(LOG_INFO, "Games will be hosted on port [%d]", NETgetGameserverPort());
 			break;
+		case CLI_STARTPLAYERS:
+			token = poptGetOptArg(poptCon);
+			if (token == nullptr)
+			{
+				qFatal("Bad start players count");
+			}
+			autostart_players = atoi(token);
+			debug(LOG_INFO, "Games will automatically start with [%d] players", autostart_players);
+			break;
 		};
 	}
 
 	return true;
+}
+
+int AutostartPlayerCount() {
+	return autostart_players;
 }
 
 bool autogame_enabled()
