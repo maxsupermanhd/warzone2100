@@ -4796,6 +4796,7 @@ WzMultiplayerOptionsTitleUI::WzMultiplayerOptionsTitleUI(std::shared_ptr<WzTitle
 
 WzMultiplayerOptionsTitleUI::~WzMultiplayerOptionsTitleUI()
 {
+	closeMultiRequester();
 	widgRemoveOverlayScreen(psInlineChooserOverlayScreen);
 	bInActualHostedLobby = false;
 }
