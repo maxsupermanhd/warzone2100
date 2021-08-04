@@ -2479,6 +2479,9 @@ static ssize_t readLobbyResponse(Socket *sock, unsigned int timeout)
 		debug(LOG_ERROR, "Lobby error (%u): %s", (unsigned int)lobbyStatusCode, NetPlay.MOTD);
 		// ensure if the lobby returns an error, we are prepared to display it (once)
 		NetPlay.ShowedMOTD = false;
+		fprintf(stderr, "MH errorlog Lobby error (%u): %s", (unsigned int)lobbyStatusCode, NetPlay.MOTD);
+		fflush(stderr);
+		goto error;
 		break;
 	}
 
@@ -2517,6 +2520,7 @@ error:
 			debug(LOG_ERROR, "%s", NetPlay.MOTD);
 		}
 	}
+	exit(81);
 
 	return SOCKET_ERROR;
 }
