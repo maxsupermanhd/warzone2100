@@ -4504,6 +4504,8 @@ static bool onBanList(const char *ip)
 			return true;
 		}
 	}
+	fprintf(stderr, "MH bancheck %s\n", ip);
+	fflush(stderr);
 	return false;
 }
 

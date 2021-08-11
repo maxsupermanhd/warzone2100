@@ -46,6 +46,37 @@ int stdinThreadFunc(void *) {
 						sendRoomSystemMessage(roomAdminMessage.c_str());
 					});
 				}
+			} else if(!strncmpl(line, "ban ip ")) {
+				char tobanip[1024] = {0};
+				int r = sscanf(line, "ban ip %1023[^\n]s", tobanip);
+				if(r != 1) {
+					errlog("MH info Failed to get ban ip!!!!\n");
+				} else {
+					std::string banIPStrCopy(tobanip);
+					wzAsyncExecOnMainThread([banIPStrCopy] {
+						for(int i=0; i<MAX_PLAYERS; i++) {
+							auto player = NetPlay.players[i];
+							if(!strcmp(player.IPtextAddress, banIPStrCopy.c_str())) {
+								kickPlayer(i, "You have been banned from joining Autohoster.", ERROR_INVALID);
+							}
+							auto KickMessage = astringf("Player %s tried to join Autohoster but failed.", player.name);
+							sendRoomSystemMessage(KickMessage.c_str());
+						}
+					});
+				}
+			} else if(!strncmpl(line, "chat bcast ")) {
+				char chatmsg[1024] = {0};
+				int r = sscanf(line, "chat bcast %1023[^\n]s", chatmsg);
+				if(r != 1) {
+					errlog("MH info Failed to get bcast message!!!!\n");
+				} else {
+					std::string chatmsgstr(chatmsg);
+					wzAsyncExecOnMainThread([chatmsgstr] {
+						sendRoomSystemMessage(chatmsgstr.c_str());
+					});
+				}
+			} else if(!strncmpl(line, "shutdown now")) {
+				exit(0);
 			}
 		}
 		free(line);
