@@ -3248,6 +3248,7 @@ void NETloadBanList() {
 			addToBanList(ToBanIP, ToBanName);
 		}
 	}
+	fclose(f);
 	return;
 }
 
